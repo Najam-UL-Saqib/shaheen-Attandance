@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { naturalCompare } from "@/lib/utils";
 
 export const Route = createFileRoute("/allocations")({ component: AllocPage });
 
@@ -36,7 +37,7 @@ function AllocPage() {
   const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("teacher_id,class_id,section_id")).data as Slot[] });
 
   const teachers = teachersQ.data ?? [];
-  const classes = classesQ.data ?? [];
+  const classes = [...(classesQ.data ?? [])].sort((a, b) => naturalCompare(a.name, b.name));
   const sections = sectionsQ.data ?? [];
   const subjects = subjectsQ.data ?? [];
   const cs = csQ.data ?? [];

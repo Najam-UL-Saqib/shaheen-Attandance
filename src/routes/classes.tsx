@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Trash2, Pencil, BookCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { naturalCompare } from "@/lib/utils";
 
 export const Route = createFileRoute("/classes")({ component: ClassesPage });
 
@@ -110,7 +111,7 @@ function ClassesPage() {
     qc.invalidateQueries({ queryKey: ["class_subjects"] });
   };
 
-  const classes = classesQ.data ?? [];
+  const classes = [...(classesQ.data ?? [])].sort((a, b) => naturalCompare(a.name, b.name));
   const sections = sectionsQ.data ?? [];
   const subjects = subjectsQ.data ?? [];
   const cs = csQ.data ?? [];

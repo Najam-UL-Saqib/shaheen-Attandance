@@ -8,6 +8,7 @@ import {
   DoorOpen,
   ClipboardList,
   CalendarDays,
+  CalendarClock,
   BarChart3,
   Settings,
   LogOut,
@@ -24,6 +25,7 @@ const nav = [
   { to: "/rooms", label: "Rooms", icon: DoorOpen },
   { to: "/allocations", label: "Workload Allocation", icon: ClipboardList },
   { to: "/timetable", label: "Timetable", icon: CalendarDays },
+  { to: "/day-view", label: "Day View", icon: CalendarClock },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;

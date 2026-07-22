@@ -9,55 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TimetableRouteImport } from './routes/timetable'
-import { Route as TeachersRouteImport } from './routes/teachers'
-import { Route as SubjectsRouteImport } from './routes/subjects'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as RoomsRouteImport } from './routes/rooms'
-import { Route as ReportsRouteImport } from './routes/reports'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ClassesRouteImport } from './routes/classes'
-import { Route as AllocationsRouteImport } from './routes/allocations'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AllocationsRouteImport } from './routes/allocations'
+import { Route as ClassesRouteImport } from './routes/classes'
+import { Route as DayViewRouteImport } from './routes/day-view'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as RoomsRouteImport } from './routes/rooms'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SubjectsRouteImport } from './routes/subjects'
+import { Route as TeachersRouteImport } from './routes/teachers'
+import { Route as TimetableRouteImport } from './routes/timetable'
 
-const TimetableRoute = TimetableRouteImport.update({
-  id: '/timetable',
-  path: '/timetable',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TeachersRoute = TeachersRouteImport.update({
-  id: '/teachers',
-  path: '/teachers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SubjectsRoute = SubjectsRouteImport.update({
-  id: '/subjects',
-  path: '/subjects',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RoomsRoute = RoomsRouteImport.update({
-  id: '/rooms',
-  path: '/rooms',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClassesRoute = ClassesRouteImport.update({
-  id: '/classes',
-  path: '/classes',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AllocationsRoute = AllocationsRouteImport.update({
@@ -65,9 +31,49 @@ const AllocationsRoute = AllocationsRouteImport.update({
   path: '/allocations',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ClassesRoute = ClassesRouteImport.update({
+  id: '/classes',
+  path: '/classes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DayViewRoute = DayViewRouteImport.update({
+  id: '/day-view',
+  path: '/day-view',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoomsRoute = RoomsRouteImport.update({
+  id: '/rooms',
+  path: '/rooms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubjectsRoute = SubjectsRouteImport.update({
+  id: '/subjects',
+  path: '/subjects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeachersRoute = TeachersRouteImport.update({
+  id: '/teachers',
+  path: '/teachers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TimetableRoute = TimetableRouteImport.update({
+  id: '/timetable',
+  path: '/timetable',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/allocations': typeof AllocationsRoute
   '/classes': typeof ClassesRoute
+  '/day-view': typeof DayViewRoute
   '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/rooms': typeof RoomsRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/allocations': typeof AllocationsRoute
   '/classes': typeof ClassesRoute
+  '/day-view': typeof DayViewRoute
   '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/rooms': typeof RoomsRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/allocations': typeof AllocationsRoute
   '/classes': typeof ClassesRoute
+  '/day-view': typeof DayViewRoute
   '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/rooms': typeof RoomsRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/'
     | '/allocations'
     | '/classes'
+    | '/day-view'
     | '/login'
     | '/reports'
     | '/rooms'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/allocations'
     | '/classes'
+    | '/day-view'
     | '/login'
     | '/reports'
     | '/rooms'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/allocations'
     | '/classes'
+    | '/day-view'
     | '/login'
     | '/reports'
     | '/rooms'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AllocationsRoute: typeof AllocationsRoute
   ClassesRoute: typeof ClassesRoute
+  DayViewRoute: typeof DayViewRoute
   LoginRoute: typeof LoginRoute
   ReportsRoute: typeof ReportsRoute
   RoomsRoute: typeof RoomsRoute
@@ -162,60 +175,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/timetable': {
-      id: '/timetable'
-      path: '/timetable'
-      fullPath: '/timetable'
-      preLoaderRoute: typeof TimetableRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/teachers': {
-      id: '/teachers'
-      path: '/teachers'
-      fullPath: '/teachers'
-      preLoaderRoute: typeof TeachersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/subjects': {
-      id: '/subjects'
-      path: '/subjects'
-      fullPath: '/subjects'
-      preLoaderRoute: typeof SubjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rooms': {
-      id: '/rooms'
-      path: '/rooms'
-      fullPath: '/rooms'
-      preLoaderRoute: typeof RoomsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/classes': {
-      id: '/classes'
-      path: '/classes'
-      fullPath: '/classes'
-      preLoaderRoute: typeof ClassesRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/allocations': {
@@ -225,11 +189,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AllocationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/classes': {
+      id: '/classes'
+      path: '/classes'
+      fullPath: '/classes'
+      preLoaderRoute: typeof ClassesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/day-view': {
+      id: '/day-view'
+      path: '/day-view'
+      fullPath: '/day-view'
+      preLoaderRoute: typeof DayViewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rooms': {
+      id: '/rooms'
+      path: '/rooms'
+      fullPath: '/rooms'
+      preLoaderRoute: typeof RoomsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subjects': {
+      id: '/subjects'
+      path: '/subjects'
+      fullPath: '/subjects'
+      preLoaderRoute: typeof SubjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teachers': {
+      id: '/teachers'
+      path: '/teachers'
+      fullPath: '/teachers'
+      preLoaderRoute: typeof TeachersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/timetable': {
+      id: '/timetable'
+      path: '/timetable'
+      fullPath: '/timetable'
+      preLoaderRoute: typeof TimetableRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -239,6 +259,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AllocationsRoute: AllocationsRoute,
   ClassesRoute: ClassesRoute,
+  DayViewRoute: DayViewRoute,
   LoginRoute: LoginRoute,
   ReportsRoute: ReportsRoute,
   RoomsRoute: RoomsRoute,

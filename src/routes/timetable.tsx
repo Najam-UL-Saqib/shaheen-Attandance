@@ -8,13 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Sparkles, Trash2, AlertTriangle } from "lucide-react";
-import { wouldExceedConsecutiveTeachingLimit } from "@/lib/teacher-schedule";
+import { DAY_NAMES, wouldExceedConsecutiveTeachingLimit } from "@/lib/schedule";
+import { naturalCompare } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/timetable")({ component: TimetablePage });
-
-const DAY_NAMES = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type Klass = { id: string; name: string };
 type Section = { id: string; class_id: string; section_name: string };
@@ -40,7 +39,7 @@ function TimetablePage() {
   const days = settingsQ.data?.working_days ?? 5;
   const periods = settingsQ.data?.periods_per_day ?? 6;
 
-  const classes = classesQ.data ?? [];
+  const classes = [...(classesQ.data ?? [])].sort((a, b) => naturalCompare(a.name, b.name));
   const sections = sectionsQ.data ?? [];
   const teachers = teachersQ.data ?? [];
   const subjects = subjectsQ.data ?? [];

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMemo } from "react";
+import { naturalCompare } from "@/lib/utils";
 
 export const Route = createFileRoute("/reports")({ component: ReportsPage });
 
@@ -38,7 +39,7 @@ function ReportsPage() {
     return sections
       .map((sec) => ({ sec, klass: classes.find((c) => c.id === sec.class_id) }))
       .filter((r) => r.klass)
-      .sort((a, b) => (a.klass!.name + a.sec.section_name).localeCompare(b.klass!.name + b.sec.section_name));
+      .sort((a, b) => naturalCompare(a.klass!.name, b.klass!.name) || naturalCompare(a.sec.section_name, b.sec.section_name));
   }, [sections, classes]);
 
   const cellA = (sectionId: string, classId: string, subjectId: string) => {
