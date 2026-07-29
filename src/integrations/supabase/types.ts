@@ -89,24 +89,69 @@ export type Database = {
         }
         Relationships: []
       }
+      game_period_assignments: {
+        Row: {
+          id: string
+          class_id: string
+          section_id: string
+          day: number
+          period: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          class_id: string
+          section_id: string
+          day: number
+          period: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          class_id?: string
+          section_id?: string
+          day?: number
+          period?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_period_assignments_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_period_assignments_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       school_settings: {
         Row: {
           id: number
           periods_per_day: number
           updated_at: string
           working_days: number
+          break_after_period: number
         }
         Insert: {
           id?: number
           periods_per_day?: number
           updated_at?: string
           working_days?: number
+          break_after_period?: number
         }
         Update: {
           id?: number
           periods_per_day?: number
           updated_at?: string
           working_days?: number
+          break_after_period?: number
         }
         Relationships: []
       }

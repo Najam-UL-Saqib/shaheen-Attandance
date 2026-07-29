@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Gamepad2, Coffee, AlertTriangle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { dateToDay, wouldExceedConsecutiveTeachingLimit } from "@/lib/schedule";
@@ -33,6 +33,7 @@ type Override = {
   subject_id: string | null;
   room_id: string | null;
 };
+type GameAssignment = { section_id: string; day: number; period: number };
 
 function todayStr() {
   const d = new Date();
@@ -59,8 +60,10 @@ function DayViewPage() {
     queryKey: ["timetable_day_overrides", selectedDate],
     queryFn: async () => (await supabase.from("timetable_day_overrides").select("*").eq("date", selectedDate)).data as Override[],
   });
+  const gameQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id,day,period")).data as GameAssignment[] });
 
   const periods = settingsQ.data?.periods_per_day ?? 6;
+  const breakAfter = settingsQ.data?.break_after_period ?? 0;
   const classes = classesQ.data ?? [];
   const sections = sectionsQ.data ?? [];
   const teachers = teachersQ.data ?? [];
@@ -69,6 +72,7 @@ function DayViewPage() {
   const cs = csQ.data ?? [];
   const allSlots = allSlotsQ.data ?? [];
   const overrides = overridesQ.data ?? [];
+  const allGameAssignments = gameQ.data ?? [];
 
   const weekday = useMemo(() => dateToDay(selectedDate), [selectedDate]);
 
@@ -90,6 +94,20 @@ function DayViewPage() {
     allSlots.filter((s) => s.day === weekday).forEach((s) => m.set(`${s.section_id}-${s.period}`, s));
     return m;
   }, [allSlots, weekday]);
+
+  const gameSet = useMemo(() => {
+    const s = new Set<string>();
+    allGameAssignments.filter((g) => g.day === weekday).forEach((g) => s.add(`${g.section_id}-${g.period}`));
+    return s;
+  }, [allGameAssignments, weekday]);
+
+  // Build period column layout with optional break separator
+  const periodColumns: Array<{ type: "period"; n: number } | { type: "break" }> = [];
+  for (let i = 1; i <= periods; i++) {
+    periodColumns.push({ type: "period", n: i });
+    if (breakAfter > 0 && i === breakAfter) periodColumns.push({ type: "break" });
+  }
+
 
   type Effective = {
     source: "override" | "default" | "empty";
@@ -117,6 +135,64 @@ function DayViewPage() {
       }
     }
     return result;
+  };
+
+  // Map each teacher to all periods they are scheduled for on the selected day (across all sections)
+  const teacherPeriodsOnDate = useMemo(() => {
+    const m = new Map<string, number[]>();
+    for (const sec of sections) {
+      for (let p = 1; p <= periods; p++) {
+        if (gameSet.has(`${sec.id}-${p}`)) continue;
+        const eff = getEffective(sec.id, p);
+        if (!eff.teacherId) continue;
+        const existing = m.get(eff.teacherId) ?? [];
+        if (!existing.includes(p)) existing.push(p);
+        m.set(eff.teacherId, existing);
+      }
+    }
+    m.forEach((v) => v.sort((a, b) => a - b));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overrideMap, defaultSlotMap, gameSet, sections, periods]);
+
+  // Returns true when teacherId has a run of 4+ consecutive periods that includes `period`
+  const isConsecutiveViolation = (teacherId: string, period: number): boolean => {
+    const occupied = teacherPeriodsOnDate.get(teacherId);
+    if (!occupied || occupied.length < 4) return false;
+    let streak = 1;
+    let maxIncludes = false;
+    for (let i = 0; i < occupied.length; i++) {
+      if (i === 0) { streak = 1; continue; }
+      if (occupied[i] === occupied[i - 1] + 1) {
+        streak++;
+      } else {
+        streak = 1;
+      }
+      if (streak >= 4) {
+        const runEnd = occupied[i];
+        const runStart = occupied[i - streak + 1];
+        if (period >= runStart && period <= runEnd) maxIncludes = true;
+      }
+    }
+    return maxIncludes;
+  };
+
+  const getTeacherViolationColor = (teacherId: string): string => {
+    const idx = teachers.findIndex(t => t.id === teacherId);
+    if (idx === -1) return "bg-amber-100 dark:bg-amber-900/40";
+    const colors = [
+      "bg-red-200 dark:bg-red-900/40",
+      "bg-blue-200 dark:bg-blue-900/40",
+      "bg-purple-200 dark:bg-purple-900/40",
+      "bg-orange-200 dark:bg-orange-900/40",
+      "bg-teal-200 dark:bg-teal-900/40",
+      "bg-emerald-200 dark:bg-emerald-900/40",
+      "bg-pink-200 dark:bg-pink-900/40",
+      "bg-cyan-200 dark:bg-cyan-900/40",
+      "bg-indigo-200 dark:bg-indigo-900/40",
+      "bg-fuchsia-200 dark:bg-fuchsia-900/40"
+    ];
+    return colors[idx % colors.length];
   };
 
   const [edit, setEdit] = useState<{ sectionId: string; classId: string; period: number } | null>(null);
@@ -231,30 +307,65 @@ function DayViewPage() {
             <thead>
               <tr className="bg-muted/50">
                 <th className="p-2 text-left border-b sticky left-0 bg-muted/50 z-10 w-40">Class / Section</th>
-                {Array.from({ length: periods }).map((_, i) => (
-                  <th key={i} className="p-2 text-left border-b border-l whitespace-nowrap">Period {i + 1}</th>
-                ))}
+                {periodColumns.map((col, i) =>
+                  col.type === "break" ? (
+                    <th key={`break-${i}`} className="p-1 border-b border-l w-8 bg-amber-50 dark:bg-amber-950/20">
+                      <Coffee className="h-3 w-3 mx-auto text-amber-500" />
+                    </th>
+                  ) : (
+                    <th key={col.n} className="p-2 text-left border-b border-l whitespace-nowrap">Period {col.n}</th>
+                  )
+                )}
               </tr>
             </thead>
             <tbody>
               {classSectionRows.map(({ sec, klass }) => (
                 <tr key={sec.id}>
                   <td className="p-2 font-medium border-b sticky left-0 bg-card z-10">{klass!.name} – {sec.section_name}</td>
-                  {Array.from({ length: periods }).map((_, pi) => {
-                    const period = pi + 1;
+                  {periodColumns.map((col, i) => {
+                    if (col.type === "break") {
+                      return (
+                        <td key={`break-${i}`} className="border-b border-l bg-amber-50/60 dark:bg-amber-950/10 w-8">
+                          <div className="h-full flex items-center justify-center">
+                            <span className="text-[9px] text-amber-500 rotate-90 inline-block">Break</span>
+                          </div>
+                        </td>
+                      );
+                    }
+                    const period = col.n;
+                    const isGame = gameSet.has(`${sec.id}-${period}`);
                     const eff = getEffective(sec.id, period);
                     return (
                       <td
                         key={period}
-                        className={`p-2 border-b border-l align-top cursor-pointer hover:bg-accent/40 min-w-32 ${eff.source === "override" ? "border-l-2 border-l-amber-500 bg-amber-500/5" : ""}`}
-                        onClick={() => openCell(sec.id, klass!.id, period)}
+                        className={`p-2 border-b border-l align-top cursor-pointer hover:bg-accent/40 min-w-32 ${isGame
+                          ? "bg-green-50 dark:bg-green-950/20 border-l-2 border-l-green-500"
+                          : eff.teacherId && isConsecutiveViolation(eff.teacherId, period)
+                            ? getTeacherViolationColor(eff.teacherId)
+                            : eff.source === "override"
+                              ? "border-l-2 border-l-amber-500 bg-amber-500/5"
+                              : ""
+                          }`}
+                        onClick={() => !isGame && openCell(sec.id, klass!.id, period)}
                       >
-                        {eff.source === "empty" ? (
+                        {isGame ? (
+                          <div className="flex items-center gap-1 text-green-700 dark:text-green-400">
+                            <Gamepad2 className="h-3 w-3" />
+                            <span className="text-xs font-medium">Game</span>
+                          </div>
+                        ) : eff.source === "empty" ? (
                           <div className="text-xs text-muted-foreground/60">+</div>
                         ) : eff.teacherId ? (
                           <div className="space-y-0.5">
                             <div className="font-medium text-xs">{subjects.find((x) => x.id === eff.subjectId)?.name}</div>
-                            <div className="text-xs text-muted-foreground">{teachers.find((x) => x.id === eff.teacherId)?.name}</div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">{teachers.find((x) => x.id === eff.teacherId)?.name}</span>
+                              {isConsecutiveViolation(eff.teacherId, period) && (
+                                <span title="Teacher has 4+ consecutive periods today">
+                                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                                </span>
+                              )}
+                            </div>
                             {eff.roomId && <div className="text-[10px] text-muted-foreground">{rooms.find((r) => r.id === eff.roomId)?.name}</div>}
                           </div>
                         ) : (
