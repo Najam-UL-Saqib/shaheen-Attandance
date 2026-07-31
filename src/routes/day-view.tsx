@@ -32,6 +32,7 @@ type Override = {
   teacher_id: string | null;
   subject_id: string | null;
   room_id: string | null;
+  is_game: boolean;
 };
 type GameAssignment = { section_id: string; day: number; period: number };
 
@@ -115,14 +116,15 @@ function DayViewPage() {
     teacherId: string | null;
     subjectId: string | null;
     roomId: string | null;
+    isGame: boolean;
   };
 
   const getEffective = (sectionId: string, period: number): Effective => {
     const ov = overrideMap.get(`${sectionId}-${period}`);
-    if (ov) return { source: "override", overrideId: ov.id, teacherId: ov.teacher_id, subjectId: ov.subject_id, roomId: ov.room_id };
+    if (ov) return { source: "override", overrideId: ov.id, teacherId: ov.teacher_id, subjectId: ov.subject_id, roomId: ov.room_id, isGame: ov.is_game };
     const def = defaultSlotMap.get(`${sectionId}-${period}`);
-    if (def) return { source: "default", overrideId: null, teacherId: def.teacher_id, subjectId: def.subject_id, roomId: def.room_id };
-    return { source: "empty", overrideId: null, teacherId: null, subjectId: null, roomId: null };
+    if (def) return { source: "default", overrideId: null, teacherId: def.teacher_id, subjectId: def.subject_id, roomId: def.room_id, isGame: false };
+    return { source: "empty", overrideId: null, teacherId: null, subjectId: null, roomId: null, isGame: gameSet.has(`${sectionId}-${period}`) };
   };
 
   const periodsForTeacherOnDate = (teacherId: string, excludeSectionId?: string, excludePeriod?: number): number[] => {
@@ -142,9 +144,8 @@ function DayViewPage() {
     const m = new Map<string, number[]>();
     for (const sec of sections) {
       for (let p = 1; p <= periods; p++) {
-        if (gameSet.has(`${sec.id}-${p}`)) continue;
         const eff = getEffective(sec.id, p);
-        if (!eff.teacherId) continue;
+        if (eff.isGame || !eff.teacherId) continue;
         const existing = m.get(eff.teacherId) ?? [];
         if (!existing.includes(p)) existing.push(p);
         m.set(eff.teacherId, existing);
@@ -199,6 +200,7 @@ function DayViewPage() {
   const [editTeacher, setEditTeacher] = useState("");
   const [editSubject, setEditSubject] = useState("");
   const [editRoom, setEditRoom] = useState("");
+  const [editMode, setEditMode] = useState<"regular" | "game">("regular");
 
   const openCell = (sectionId: string, classId: string, period: number) => {
     const eff = getEffective(sectionId, period);
@@ -206,6 +208,7 @@ function DayViewPage() {
     setEditTeacher(eff.teacherId ?? "");
     setEditSubject(eff.subjectId ?? "");
     setEditRoom(eff.roomId ?? "");
+    setEditMode(eff.isGame ? "game" : "regular");
   };
 
   const subjectsForClass = useMemo(() => {
@@ -215,9 +218,30 @@ function DayViewPage() {
   }, [cs, subjects, edit]);
 
   const currentOverride = edit ? overrideMap.get(`${edit.sectionId}-${edit.period}`) : undefined;
+  const editIsBaseGame = edit ? gameSet.has(`${edit.sectionId}-${edit.period}`) && !currentOverride : false;
+
+  const saveGamePeriod = async () => {
+    if (!edit) return;
+    const payload = {
+      date: selectedDate,
+      class_id: edit.classId,
+      section_id: edit.sectionId,
+      period: edit.period,
+      teacher_id: null,
+      subject_id: null,
+      room_id: null,
+      is_game: true,
+    };
+    const { error } = await supabase.from("timetable_day_overrides").upsert(payload, { onConflict: "section_id,date,period" });
+    if (error) return toast.error(error.message);
+    toast.success("Marked as Game period for this date");
+    setEdit(null);
+    qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
+  };
 
   const saveCell = async () => {
     if (!edit) return;
+    if (editMode === "game") return saveGamePeriod();
     if (!editTeacher || !editSubject) return toast.error("Pick teacher and subject");
 
     const otherPeriods = periodsForTeacherOnDate(editTeacher, edit.sectionId, edit.period);
@@ -243,6 +267,7 @@ function DayViewPage() {
       teacher_id: editTeacher,
       subject_id: editSubject,
       room_id: editRoom || null,
+      is_game: false,
     };
     const { error } = await supabase.from("timetable_day_overrides").upsert(payload, { onConflict: "section_id,date,period" });
     if (error) return toast.error(error.message);
@@ -261,6 +286,7 @@ function DayViewPage() {
       teacher_id: null,
       subject_id: null,
       room_id: null,
+      is_game: false,
     };
     const { error } = await supabase.from("timetable_day_overrides").upsert(payload, { onConflict: "section_id,date,period" });
     if (error) return toast.error(error.message);
@@ -333,8 +359,8 @@ function DayViewPage() {
                       );
                     }
                     const period = col.n;
-                    const isGame = gameSet.has(`${sec.id}-${period}`);
                     const eff = getEffective(sec.id, period);
+                    const isGame = eff.isGame;
                     return (
                       <td
                         key={period}
@@ -346,7 +372,7 @@ function DayViewPage() {
                               ? "border-l-2 border-l-amber-500 bg-amber-500/5"
                               : ""
                           }`}
-                        onClick={() => !isGame && openCell(sec.id, klass!.id, period)}
+                        onClick={() => openCell(sec.id, klass!.id, period)}
                       >
                         {isGame ? (
                           <div className="flex items-center gap-1 text-green-700 dark:text-green-400">
@@ -390,34 +416,73 @@ function DayViewPage() {
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              {currentOverride ? "This period has a substitution for this date only." : "Currently using the default weekly schedule."}
+              {currentOverride
+                ? "This period has a substitution for this date only."
+                : editIsBaseGame
+                  ? "This is normally a Game / PT period. Changes here only apply to this date."
+                  : "Currently using the default weekly schedule."}
             </p>
-            <div>
-              <Label>Teacher</Label>
-              <Select value={editTeacher} onValueChange={(v) => { setEditTeacher(v); setEditSubject(""); }}>
-                <SelectTrigger><SelectValue placeholder="Select teacher" /></SelectTrigger>
-                <SelectContent>{teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-              </Select>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={editMode === "regular" ? "default" : "outline"}
+                onClick={() => setEditMode("regular")}
+              >
+                Regular class
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={editMode === "game" ? "default" : "outline"}
+                className={editMode === "game" ? "bg-green-600 hover:bg-green-700" : ""}
+                onClick={() => setEditMode("game")}
+              >
+                <Gamepad2 className="h-4 w-4 mr-1" /> Game period
+              </Button>
             </div>
-            <div>
-              <Label>Subject</Label>
-              <Select value={editSubject} onValueChange={setEditSubject}>
-                <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
-                <SelectContent>{subjectsForClass.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Room (optional)</Label>
-              <Select value={editRoom} onValueChange={setEditRoom}>
-                <SelectTrigger><SelectValue placeholder="No room" /></SelectTrigger>
-                <SelectContent>{rooms.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
+
+            {editMode === "game" ? (
+              <div className="flex flex-col items-center gap-2 py-6 text-center">
+                <Gamepad2 className="h-10 w-10 text-green-500" />
+                <p className="text-sm text-muted-foreground">
+                  This slot will be marked as a <strong>Game / PT period</strong> for {selectedDate} only.
+                  No teacher or subject assignment is needed.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label>Teacher</Label>
+                  <Select value={editTeacher} onValueChange={(v) => { setEditTeacher(v); setEditSubject(""); }}>
+                    <SelectTrigger><SelectValue placeholder="Select teacher" /></SelectTrigger>
+                    <SelectContent>{teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Subject</Label>
+                  <Select value={editSubject} onValueChange={setEditSubject}>
+                    <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                    <SelectContent>{subjectsForClass.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Room (optional)</Label>
+                  <Select value={editRoom} onValueChange={setEditRoom}>
+                    <SelectTrigger><SelectValue placeholder="No room" /></SelectTrigger>
+                    <SelectContent>{rooms.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter className="gap-2 flex-wrap">
             <Button variant="ghost" onClick={markFree}>Mark as free</Button>
             <Button variant="ghost" disabled={!currentOverride} onClick={resetCell}>Reset to default</Button>
-            <Button onClick={saveCell}>Save</Button>
+            <Button onClick={saveCell} className={editMode === "game" ? "bg-green-600 hover:bg-green-700" : ""}>
+              {editMode === "game" ? "Set as Game" : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

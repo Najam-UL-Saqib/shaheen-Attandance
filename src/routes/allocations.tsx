@@ -5,10 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Trash2 } from "lucide-react";
+import { Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { naturalCompare } from "@/lib/utils";
@@ -62,6 +63,32 @@ function AllocPage() {
   const remaining = total - sumAssigned;
 
   const existing = allocs.find((a) => a.teacher_id === teacherId && a.class_id === classId && a.section_id === sectionId);
+
+  const visibleAllocs = useMemo(() => {
+    const filtered = teacherId ? allocs.filter((a) => a.teacher_id === teacherId) : allocs;
+    return [...filtered].sort((a, b) => {
+      const cA = classes.find((c) => c.id === a.class_id)?.name ?? "";
+      const cB = classes.find((c) => c.id === b.class_id)?.name ?? "";
+      const byClass = naturalCompare(cA, cB);
+      if (byClass !== 0) return byClass;
+      const sA = sections.find((s) => s.id === a.section_id)?.section_name ?? "";
+      const sB = sections.find((s) => s.id === b.section_id)?.section_name ?? "";
+      return naturalCompare(sA, sB);
+    });
+  }, [allocs, classes, sections, teacherId]);
+
+  const teacherTotalPeriods = useMemo(
+    () => (teacherId ? visibleAllocs.reduce((sum, a) => sum + a.total_periods, 0) : 0),
+    [visibleAllocs, teacherId],
+  );
+
+  const selectedTeacherName = teachers.find((t) => t.id === teacherId)?.name;
+
+  const loadAllocationIntoForm = (a: Allocation) => {
+    setTeacherId(a.teacher_id);
+    setClassId(a.class_id);
+    setSectionId(a.section_id);
+  };
 
   // auto-fill total & per-subject periods once teacher, class & section are all selected
   useEffect(() => {
@@ -186,27 +213,75 @@ function AllocPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>All Allocations</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  {selectedTeacherName ? (
+                    <>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      {selectedTeacherName}'s Workload
+                    </>
+                  ) : (
+                    "All Allocations"
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  {selectedTeacherName
+                    ? `${visibleAllocs.length} class${visibleAllocs.length === 1 ? "" : "es"} assigned · ${teacherTotalPeriods} periods/week total`
+                    : "Select a teacher above to see just their allocations."}
+                </CardDescription>
+              </div>
+              {selectedTeacherName && (
+                <Button variant="ghost" size="sm" onClick={() => { setTeacherId(""); setClassId(""); setSectionId(""); }}>
+                  <X className="h-4 w-4 mr-1" />
+                  Show all teachers
+                </Button>
+              )}
+            </div>
+          </CardHeader>
           <CardContent>
             <div className="rounded-md border overflow-auto max-h-[600px]">
               <Table>
-                <TableHeader><TableRow><TableHead>Teacher</TableHead><TableHead>Class / Sec</TableHead><TableHead>Subjects</TableHead><TableHead className="text-right">Total</TableHead><TableHead /></TableRow></TableHeader>
+                <TableHeader><TableRow>{!selectedTeacherName && <TableHead>Teacher</TableHead>}<TableHead>Class / Sec</TableHead><TableHead>Subjects</TableHead><TableHead className="text-right">Total</TableHead><TableHead /></TableRow></TableHeader>
                 <TableBody>
-                  {allocs.length === 0 && <TableRow><TableCell colSpan={5} className="py-6 text-center text-muted-foreground">No allocations yet.</TableCell></TableRow>}
-                  {allocs.map((a) => {
+                  {visibleAllocs.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={selectedTeacherName ? 4 : 5} className="py-6 text-center text-muted-foreground">
+                        {selectedTeacherName ? "No allocations yet for this teacher." : "No allocations yet."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {visibleAllocs.map((a) => {
                     const t = teachers.find((x) => x.id === a.teacher_id)?.name ?? "?";
                     const c = classes.find((x) => x.id === a.class_id)?.name ?? "?";
                     const sec = sections.find((x) => x.id === a.section_id)?.section_name ?? "?";
                     const subs = allocSubs.filter((x) => x.allocation_id === a.id);
+                    const isEditing = a.id === existing?.id;
                     return (
-                      <TableRow key={a.id}>
-                        <TableCell className="font-medium">{t}</TableCell>
-                        <TableCell>{c} / {sec}</TableCell>
+                      <TableRow
+                        key={a.id}
+                        onClick={() => loadAllocationIntoForm(a)}
+                        className={`cursor-pointer ${isEditing ? "bg-accent" : ""}`}
+                        title="Click to load into the edit form"
+                      >
+                        {!selectedTeacherName && <TableCell className="font-medium">{t}</TableCell>}
+                        <TableCell>
+                          <Badge variant="secondary" className="font-normal">{c} / {sec}</Badge>
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {subs.map((s) => `${subjects.find((x) => x.id === s.subject_id)?.name ?? "?"} (${s.periods})`).join(", ") || "—"}
                         </TableCell>
                         <TableCell className="text-right font-mono">{a.total_periods}</TableCell>
-                        <TableCell><Button size="icon" variant="ghost" onClick={() => removeAllocation(a.id)}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                        <TableCell>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={(e) => { e.stopPropagation(); removeAllocation(a.id); }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}

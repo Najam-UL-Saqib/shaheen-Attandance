@@ -292,9 +292,11 @@ function TimetablePage() {
   };
 
   const clearAll = async () => {
-    if (!confirm("Clear entire timetable for this section?")) return;
+    if (!confirm("Clear entire timetable for this section? This also clears any game periods.")) return;
     await supabase.from("timetable_slots").delete().eq("section_id", sectionId);
+    await supabase.from("game_period_assignments").delete().eq("section_id", sectionId);
     qc.invalidateQueries({ queryKey: ["timetable_slots"] });
+    qc.invalidateQueries({ queryKey: ["game_period_assignments"] });
   };
 
   // Build list of period numbers from 1..periods, inserting a break marker after breakAfter

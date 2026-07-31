@@ -8,12 +8,29 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Coffee } from "lucide-react";
+import { Coffee, Palette, RotateCcw } from "lucide-react";
+import {
+  THEME_COLOR_KEYS,
+  THEME_COLOR_LABELS,
+  THEME_PRESETS,
+  useThemeColors,
+  type ThemeColorKey,
+} from "@/hooks/use-theme-colors";
+
+const DEFAULT_COLOR_HEX: Record<ThemeColorKey, string> = {
+  background: "#fdfdfe",
+  primary: "#3d4f9e",
+  sidebar: "#1e2436",
+  tabActive: "#3d4f9e",
+  tableHeader: "#eef0f7",
+  tableStripe: "#f8f9fc",
+};
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
 function SettingsPage() {
   const qc = useQueryClient();
+  const { colors, setColor, applyPreset, reset } = useThemeColors();
   const { data } = useQuery({
     queryKey: ["settings"],
     queryFn: async () => {
@@ -47,7 +64,7 @@ function SettingsPage() {
   return (
     <AdminLayout>
       <PageHeader title="Settings" description="Configure the weekly schedule shape." />
-      <div className="max-w-md space-y-6">
+      <div className="max-w-2xl space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Weekly schedule</CardTitle>
@@ -107,6 +124,71 @@ function SettingsPage() {
               </p>
             </div>
             <Button onClick={save}>Save</Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Palette className="h-5 w-5 text-muted-foreground" />
+              Appearance
+            </CardTitle>
+            <CardDescription>
+              Customize the colors used for tabs, table columns, and rows. Changes apply
+              instantly and are saved to this browser.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div>
+              <Label className="mb-2 block">Presets</Label>
+              <div className="flex flex-wrap gap-2">
+                {THEME_PRESETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => applyPreset(preset.colors)}
+                    className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+                    title={preset.name}
+                  >
+                    <span className="flex -space-x-1">
+                      <span
+                        className="h-3.5 w-3.5 rounded-full border border-background"
+                        style={{ backgroundColor: preset.colors.primary }}
+                      />
+                      <span
+                        className="h-3.5 w-3.5 rounded-full border border-background"
+                        style={{ backgroundColor: preset.colors.sidebar }}
+                      />
+                    </span>
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {THEME_COLOR_KEYS.map((key) => (
+                <div key={key} className="flex items-center justify-between gap-3 rounded-md border p-2.5">
+                  <div>
+                    <div className="text-sm font-medium">{THEME_COLOR_LABELS[key]}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {colors[key] ?? DEFAULT_COLOR_HEX[key]}
+                    </div>
+                  </div>
+                  <input
+                    type="color"
+                    value={colors[key] ?? DEFAULT_COLOR_HEX[key]}
+                    onChange={(e) => setColor(key, e.target.value)}
+                    className="h-8 w-10 cursor-pointer rounded border border-input bg-transparent p-0.5"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <Button variant="outline" onClick={reset}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Reset to defaults
+            </Button>
           </CardContent>
         </Card>
       </div>

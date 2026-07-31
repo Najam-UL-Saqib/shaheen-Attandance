@@ -329,6 +329,7 @@ export type Database = {
           created_at: string
           date: string
           id: string
+          is_game: boolean
           period: number
           room_id: string | null
           section_id: string
@@ -341,6 +342,7 @@ export type Database = {
           created_at?: string
           date: string
           id?: string
+          is_game?: boolean
           period: number
           room_id?: string | null
           section_id: string
@@ -353,6 +355,7 @@ export type Database = {
           created_at?: string
           date?: string
           id?: string
+          is_game?: boolean
           period?: number
           room_id?: string | null
           section_id?: string
