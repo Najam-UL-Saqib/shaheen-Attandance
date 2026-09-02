@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, Trash2, AlertTriangle, Gamepad2, Coffee } from "lucide-react";
-import { DAY_NAMES, wouldExceedConsecutiveTeachingLimit } from "@/lib/schedule";
+import { DAY_NAMES, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
 import { naturalCompare } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -39,9 +39,10 @@ function TimetablePage() {
   const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("*")).data as Slot[] });
   const gameQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("*")).data as GameAssignment[] });
 
-  const days = settingsQ.data?.working_days ?? 5;
-  const periods = settingsQ.data?.periods_per_day ?? 6;
-  const breakAfter = settingsQ.data?.break_after_period ?? 0;
+  const days = settingsQ.data?.working_days ?? DEFAULT_WORKING_DAYS;
+  const periods = settingsQ.data?.periods_per_day ?? DEFAULT_PERIODS_PER_DAY;
+  const breakAfter = settingsQ.data?.break_after_period ?? DEFAULT_BREAK_AFTER_PERIOD;
+  const maxConsecutive = settingsQ.data?.max_consecutive_periods ?? MAX_CONSECUTIVE_TEACHING_PERIODS;
 
   const classes = [...(classesQ.data ?? [])].sort((a, b) => naturalCompare(a.name, b.name));
   const sections = sectionsQ.data ?? [];
@@ -103,7 +104,7 @@ function TimetablePage() {
     const occupiedPeriods = allSlots
       .filter((s) => s.day === day && s.teacher_id === teacherId && s.id !== ignoreSlotId)
       .map((s) => s.period);
-    return wouldExceedConsecutiveTeachingLimit(occupiedPeriods, period);
+    return wouldExceedConsecutiveTeachingLimit(occupiedPeriods, period, maxConsecutive);
   };
 
   const checkConflicts = (day: number, period: number, teacherId: string, roomId: string, ignoreSlotId?: string) => {
@@ -116,7 +117,7 @@ function TimetablePage() {
         conflicts.push(`Teacher already teaching ${cls?.name}/${sec?.section_name} at this time`);
       }
       if (exceedsTeacherConsecutiveLimit(day, period, teacherId, ignoreSlotId)) {
-        conflicts.push("Teacher would teach more than 3 consecutive periods");
+        conflicts.push(`Teacher would teach more than ${maxConsecutive} consecutive periods`);
       }
     }
     if (roomId) {
@@ -151,7 +152,7 @@ function TimetablePage() {
     }
 
     if (exceedsTeacherConsecutiveLimit(edit.day, edit.period, editTeacher, existing?.id)) {
-      return toast.error("Cannot save: a teacher must take a break after 3 consecutive periods.");
+      return toast.error(`Cannot save: a teacher must take a break after ${maxConsecutive} consecutive periods.`);
     }
 
     const conflicts = checkConflicts(edit.day, edit.period, editTeacher, editRoom, existing?.id);
@@ -263,7 +264,7 @@ function TimetablePage() {
           .filter((n) => {
             if (n.remaining <= 0 || teacherBusy.has(`${d}-${p}-${n.teacher_id}`)) return false;
             const occupied = teacherPeriods.get(`${d}-${n.teacher_id}`) ?? [];
-            return !wouldExceedConsecutiveTeachingLimit(occupied, p);
+            return !wouldExceedConsecutiveTeachingLimit(occupied, p, maxConsecutive);
           })
           .sort((a, b) => b.remaining - a.remaining);
         const pick = candidates.find((n) => !subjectsToday.has(n.subject_id)) || candidates[0];

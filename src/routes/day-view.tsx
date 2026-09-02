@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { RotateCcw, Gamepad2, Coffee, AlertTriangle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { dateToDay, wouldExceedConsecutiveTeachingLimit } from "@/lib/schedule";
+import { dateToDay, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
 import { naturalCompare } from "@/lib/utils";
 
 export const Route = createFileRoute("/day-view")({ component: DayViewPage });
@@ -63,8 +63,9 @@ function DayViewPage() {
   });
   const gameQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id,day,period")).data as GameAssignment[] });
 
-  const periods = settingsQ.data?.periods_per_day ?? 6;
-  const breakAfter = settingsQ.data?.break_after_period ?? 0;
+  const periods = settingsQ.data?.periods_per_day ?? DEFAULT_PERIODS_PER_DAY;
+  const breakAfter = settingsQ.data?.break_after_period ?? DEFAULT_BREAK_AFTER_PERIOD;
+  const maxConsecutive = settingsQ.data?.max_consecutive_periods ?? MAX_CONSECUTIVE_TEACHING_PERIODS;
   const classes = classesQ.data ?? [];
   const sections = sectionsQ.data ?? [];
   const teachers = teachersQ.data ?? [];
@@ -156,10 +157,10 @@ function DayViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overrideMap, defaultSlotMap, gameSet, sections, periods]);
 
-  // Returns true when teacherId has a run of 4+ consecutive periods that includes `period`
+  // Returns true when teacherId has a run of (maxConsecutive + 1)+ consecutive periods that includes `period`
   const isConsecutiveViolation = (teacherId: string, period: number): boolean => {
     const occupied = teacherPeriodsOnDate.get(teacherId);
-    if (!occupied || occupied.length < 4) return false;
+    if (!occupied || occupied.length <= maxConsecutive) return false;
     let streak = 1;
     let maxIncludes = false;
     for (let i = 0; i < occupied.length; i++) {
@@ -169,7 +170,7 @@ function DayViewPage() {
       } else {
         streak = 1;
       }
-      if (streak >= 4) {
+      if (streak > maxConsecutive) {
         const runEnd = occupied[i];
         const runStart = occupied[i - streak + 1];
         if (period >= runStart && period <= runEnd) maxIncludes = true;
@@ -245,8 +246,8 @@ function DayViewPage() {
     if (!editTeacher || !editSubject) return toast.error("Pick teacher and subject");
 
     const otherPeriods = periodsForTeacherOnDate(editTeacher, edit.sectionId, edit.period);
-    if (wouldExceedConsecutiveTeachingLimit(otherPeriods, edit.period)) {
-      return toast.error("Cannot save: a teacher must take a break after 3 consecutive periods.");
+    if (wouldExceedConsecutiveTeachingLimit(otherPeriods, edit.period, maxConsecutive)) {
+      return toast.error(`Cannot save: a teacher must take a break after ${maxConsecutive} consecutive periods.`);
     }
 
     const conflicts: string[] = [];
@@ -387,7 +388,7 @@ function DayViewPage() {
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted-foreground">{teachers.find((x) => x.id === eff.teacherId)?.name}</span>
                               {isConsecutiveViolation(eff.teacherId, period) && (
-                                <span title="Teacher has 4+ consecutive periods today">
+                                <span title={`Teacher has more than ${maxConsecutive} consecutive periods today`}>
                                   <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
                                 </span>
                               )}

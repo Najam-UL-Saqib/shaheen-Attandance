@@ -40,22 +40,35 @@ function SettingsPage() {
     },
   });
   const [days, setDays] = useState(5);
-  const [periods, setPeriods] = useState(6);
+  const [periods, setPeriods] = useState(8);
   const [breakAfter, setBreakAfter] = useState(0);
+  const [maxConsecutive, setMaxConsecutive] = useState(3);
 
   useEffect(() => {
     if (data) {
       setDays(data.working_days);
       setPeriods(data.periods_per_day);
       setBreakAfter(data.break_after_period ?? 0);
+      setMaxConsecutive(data.max_consecutive_periods ?? 3);
     }
   }, [data]);
 
   const save = async () => {
-    const { error } = await supabase
+    const base = { working_days: days, periods_per_day: periods, break_after_period: breakAfter };
+    let { error } = await supabase
       .from("school_settings")
-      .update({ working_days: days, periods_per_day: periods, break_after_period: breakAfter })
+      .update({ ...base, max_consecutive_periods: maxConsecutive })
       .eq("id", 1);
+
+    // Fall back gracefully if the max_consecutive_periods migration has not been applied yet.
+    if (error && /max_consecutive_periods/.test(error.message)) {
+      ({ error } = await supabase.from("school_settings").update(base).eq("id", 1));
+      if (!error) {
+        toast.warning("Saved. Run the latest DB migration to persist the consecutive-periods limit.");
+        qc.invalidateQueries({ queryKey: ["settings"] });
+        return;
+      }
+    }
     if (error) return toast.error(error.message);
     toast.success("Settings saved");
     qc.invalidateQueries({ queryKey: ["settings"] });
@@ -91,6 +104,20 @@ function SettingsPage() {
                 value={periods}
                 onChange={(e) => setPeriods(Number(e.target.value))}
               />
+            </div>
+            <div>
+              <Label>Max consecutive periods per teacher</Label>
+              <Input
+                type="number"
+                min={1}
+                max={periods}
+                value={maxConsecutive}
+                onChange={(e) => setMaxConsecutive(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                A teacher may not be scheduled for more than this many back-to-back periods in a day
+                (enforced in the Timetable and Day View editors and the auto-generator).
+              </p>
             </div>
 
             <Button onClick={save}>Save</Button>

@@ -138,6 +138,7 @@ export type Database = {
           updated_at: string
           working_days: number
           break_after_period: number
+          max_consecutive_periods: number
         }
         Insert: {
           id?: number
@@ -145,6 +146,7 @@ export type Database = {
           updated_at?: string
           working_days?: number
           break_after_period?: number
+          max_consecutive_periods?: number
         }
         Update: {
           id?: number
@@ -152,6 +154,7 @@ export type Database = {
           updated_at?: string
           working_days?: number
           break_after_period?: number
+          max_consecutive_periods?: number
         }
         Relationships: []
       }
