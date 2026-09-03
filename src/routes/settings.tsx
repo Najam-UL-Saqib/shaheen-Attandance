@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Coffee, Palette, RotateCcw } from "lucide-react";
 import {
@@ -44,8 +44,12 @@ function SettingsPage() {
   const [breakAfter, setBreakAfter] = useState(0);
   const [maxConsecutive, setMaxConsecutive] = useState(3);
 
+  // Seed the form from the DB once. A later refetch of ["settings"] (window focus,
+  // post-save invalidation) must not clobber edits the user has not saved yet.
+  const seeded = useRef(false);
   useEffect(() => {
-    if (data) {
+    if (data && !seeded.current) {
+      seeded.current = true;
       setDays(data.working_days);
       setPeriods(data.periods_per_day);
       setBreakAfter(data.break_after_period ?? 0);
@@ -54,6 +58,7 @@ function SettingsPage() {
   }, [data]);
 
   const save = async () => {
+    if (!data) return; // don't write defaults before the row has loaded
     const base = { working_days: days, periods_per_day: periods, break_after_period: breakAfter };
     let { error } = await supabase
       .from("school_settings")
@@ -85,8 +90,9 @@ function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Working days per week (1–7)</Label>
+              <Label htmlFor="working-days">Working days per week (1–7)</Label>
               <Input
+                id="working-days"
                 type="number"
                 min={1}
                 max={7}
@@ -96,8 +102,9 @@ function SettingsPage() {
               <p className="text-xs text-muted-foreground mt-1">5 = Mon–Fri, 6 = Mon–Sat</p>
             </div>
             <div>
-              <Label>Periods per day</Label>
+              <Label htmlFor="periods-per-day">Periods per day</Label>
               <Input
+                id="periods-per-day"
                 type="number"
                 min={1}
                 max={12}
@@ -106,8 +113,9 @@ function SettingsPage() {
               />
             </div>
             <div>
-              <Label>Max consecutive periods per teacher</Label>
+              <Label htmlFor="max-consecutive">Max consecutive periods per teacher</Label>
               <Input
+                id="max-consecutive"
                 type="number"
                 min={1}
                 max={periods}
@@ -120,7 +128,7 @@ function SettingsPage() {
               </p>
             </div>
 
-            <Button onClick={save}>Save</Button>
+            <Button onClick={save} disabled={!data}>Save</Button>
           </CardContent>
         </Card>
 
@@ -136,8 +144,9 @@ function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Break after period (0 = no break)</Label>
+              <Label htmlFor="break-after">Break after period (0 = no break)</Label>
               <Input
+                id="break-after"
                 type="number"
                 min={0}
                 max={periods}
@@ -150,7 +159,7 @@ function SettingsPage() {
                   : "No break will be shown."}
               </p>
             </div>
-            <Button onClick={save}>Save</Button>
+            <Button onClick={save} disabled={!data}>Save</Button>
           </CardContent>
         </Card>
 
