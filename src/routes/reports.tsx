@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { FileDown } from "lucide-react";
 import { useMemo } from "react";
 import { naturalCompare } from "@/lib/utils";
 
@@ -11,8 +13,23 @@ export const Route = createFileRoute("/reports")({ component: ReportsPage });
 
 type Klass = { id: string; name: string };
 type Section = { id: string; class_id: string; section_name: string; class_teacher_id: string | null };
-type Subject = { id: string; name: string };
+type Subject = { id: string; name: string; code?: string | null };
 type Teacher = { id: string; name: string };
+
+const SUBJECT_ABBR: Record<string, string> = {
+  English: "Eng",
+  Urdu: "Urdu",
+  Mathematics: "Maths",
+  "General Science": "Gen Sci",
+  "Social Studies": "Soc St",
+  Islamiat: "Isl",
+  "Computer Science": "Comp Sci",
+  Physics: "Phy",
+  Chemistry: "Chem",
+  Biology: "Bio",
+  "Pakistan Studies": "Pak St",
+};
+const subjLabel = (s: Subject) => s.code?.trim() || SUBJECT_ABBR[s.name] || s.name;
 type Allocation = { id: string; teacher_id: string; class_id: string; section_id: string; total_periods: number };
 type AllocSubject = { allocation_id: string; subject_id: string; periods: number };
 type Slot = { class_id: string; section_id: string; teacher_id: string; subject_id: string };
@@ -75,10 +92,19 @@ function ReportsPage() {
 
   return (
     <AdminLayout>
-      <PageHeader title="Reports" description="Allocation vs timetable usage across classes and teachers." />
+      <PageHeader
+        title="Reports"
+        description="Allocation vs timetable usage across classes and teachers."
+        actions={
+          <Button variant="outline" size="sm" className="no-print" onClick={() => window.print()}>
+            <FileDown className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
+        }
+      />
 
-      <Tabs defaultValue="A">
-        <TabsList>
+      <Tabs defaultValue="A" className="print-area">
+        <TabsList className="no-print">
           <TabsTrigger value="A">Class/Section × Subject</TabsTrigger>
           <TabsTrigger value="B">Teacher × Class/Section</TabsTrigger>
         </TabsList>
@@ -88,21 +114,15 @@ function ReportsPage() {
             <CardContent className="p-0 overflow-x-auto">
               <table className="w-full border-collapse text-sm table-fixed">
                 <thead>
-                  <tr className="bg-muted/50 align-bottom">
-                    <th className="p-2 text-left border-b w-40">Class / Section</th>
+                  <tr className="bg-muted/50">
+                    <th className="px-2 py-1.5 text-left border-b w-36">Class / Section</th>
                     {subjects.map((s) => (
-                      <th key={s.id} className="border-b border-l p-1" title={s.name}>
-                        <div className="mx-auto [writing-mode:vertical-rl] rotate-180 whitespace-nowrap text-xs font-medium py-1">
-                          {s.name}
-                        </div>
+                      <th key={s.id} className="border-b border-l px-1 py-1.5 text-center text-xs font-medium" title={s.name}>
+                        {subjLabel(s)}
                       </th>
                     ))}
-                    <th className="border-b border-l p-1 bg-muted/70" title="Game / PT periods">
-                      <div className="mx-auto [writing-mode:vertical-rl] rotate-180 whitespace-nowrap text-xs font-medium py-1">Games</div>
-                    </th>
-                    <th className="border-b border-l p-1 bg-muted/70">
-                      <div className="mx-auto [writing-mode:vertical-rl] rotate-180 whitespace-nowrap text-xs font-medium py-1">Total</div>
-                    </th>
+                    <th className="border-b border-l px-1 py-1.5 text-center text-xs font-medium bg-muted/70" title="Game / PT periods">Games</th>
+                    <th className="border-b border-l px-1 py-1.5 text-center text-xs font-medium bg-muted/70">Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -111,14 +131,14 @@ function ReportsPage() {
                     const classTeacher = teachers.find((t) => t.id === sec.class_teacher_id)?.name;
                     return (
                       <tr key={sec.id} className="hover:bg-muted/30">
-                        <td className="p-2 border-b w-40">
-                          <div className="font-medium">{klass!.name} – {sec.section_name}</div>
-                          {classTeacher && <div className="text-[11px] text-muted-foreground truncate">{classTeacher}</div>}
+                        <td className="px-2 py-1 border-b w-36 whitespace-nowrap">
+                          <span className="font-medium">{klass!.name} – {sec.section_name}</span>
+                          {classTeacher && <span className="text-[10px] text-muted-foreground ml-1.5">{classTeacher}</span>}
                         </td>
                         {subjects.map((sub) => {
                           const data = cellA(sec.id, klass!.id, sub.id);
                           if (!data) {
-                            return <td key={sub.id} className="border-b border-l text-center text-muted-foreground/30">—</td>;
+                            return <td key={sub.id} className="border-b border-l py-1 text-center text-muted-foreground/30">—</td>;
                           }
                           const used = data.reduce((n, d) => n + d.used, 0);
                           const allocated = data.reduce((n, d) => n + d.allocated, 0);
@@ -129,16 +149,16 @@ function ReportsPage() {
                             <td
                               key={sub.id}
                               title={title}
-                              className={`border-b border-l text-center tabular-nums ${used !== allocated ? "text-destructive font-medium" : ""}`}
+                              className={`border-b border-l py-1 text-center tabular-nums ${used !== allocated ? "text-destructive font-medium" : ""}`}
                             >
                               {used}
                             </td>
                           );
                         })}
-                        <td className="border-b border-l text-center tabular-nums bg-muted/20">
+                        <td className="border-b border-l py-1 text-center tabular-nums bg-muted/20">
                           {totals.gamePeriods > 0 ? totals.gamePeriods : <span className="text-muted-foreground/30">—</span>}
                         </td>
-                        <td className={`border-b border-l text-center tabular-nums font-semibold bg-muted/20 ${totals.used !== totals.allocated ? "text-destructive" : ""}`}>
+                        <td className={`border-b border-l py-1 text-center tabular-nums font-semibold bg-muted/20 ${totals.used !== totals.allocated ? "text-destructive" : ""}`}>
                           {totals.used}
                         </td>
                       </tr>
@@ -146,7 +166,7 @@ function ReportsPage() {
                   })}
                 </tbody>
               </table>
-              <div className="p-3 text-xs text-muted-foreground border-t">
+              <div className="px-3 py-2 text-xs text-muted-foreground border-t">
                 Each cell = weekly periods assigned for that subject. <b>Total</b> = assigned periods for the section
                 (subjects only; game periods are the separate column). A red number means the timetable count doesn&apos;t
                 match the allocation — hover for detail.

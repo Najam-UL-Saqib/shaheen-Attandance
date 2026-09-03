@@ -115,3 +115,38 @@
     -webkit-font-smoothing: antialiased;
   }
 }
+
+/* Print / "Export PDF": drop the app chrome, show only the report table. */
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+
+  aside,
+  .no-print { display: none !important; }
+
+  main { overflow: visible !important; }
+  main > div { max-width: none !important; padding: 0 !important; }
+
+  html, body { background: #fff !important; color: #000 !important; }
+
+  .print-area,
+  .print-area * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-area .rounded-lg,
+  .print-area .border { box-shadow: none !important; }
+
+  .print-area table {
+    font-size: 9px !important;
+    width: 100% !important;
+    table-layout: fixed;
+  }
+  .print-area th,
+  .print-area td {
+    padding: 2px 3px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+}

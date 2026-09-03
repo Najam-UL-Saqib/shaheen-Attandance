@@ -11,15 +11,19 @@ test.describe("Reports", () => {
     // default tab is Class/Section x Subject
     const headerRow = page.locator("table thead tr").first();
     await expect(headerRow.getByText("Class / Section")).toBeVisible();
-    await expect(headerRow.getByText("English", { exact: true })).toBeVisible();
+    await expect(headerRow.getByText("Eng", { exact: true })).toBeVisible(); // abbreviated subject header
     await expect(headerRow.getByText("Games", { exact: true })).toBeVisible();
     await expect(headerRow.getByText("Total", { exact: true })).toBeVisible();
 
-    // first column: "1 – A" then just the class teacher name (no "Class teacher:" label)
+    // first column: "1 – A" and the class teacher name on the SAME line, no label
     const firstCol = page.locator("table tbody tr td:first-child").first();
     await expect(firstCol).toContainText("1 – A");
     await expect(firstCol).not.toContainText("Class teacher:");
     await expect(firstCol).toContainText(/\p{L}{3,}/u); // a teacher name
+    // class/section and teacher share one line (no block-level children)
+    await expect(firstCol.locator("div")).toHaveCount(0);
+    const h = await firstCol.evaluate((el) => (el as HTMLElement).offsetHeight);
+    expect(h).toBeLessThan(34);
 
     // subject cells are a single number (or a dash), never "N / N"
     const subjectCell = page.locator('table tbody tr:first-child td:nth-child(2)');
@@ -38,6 +42,28 @@ test.describe("Reports", () => {
       }),
     );
     expect(scrolls, "Table A should not overflow horizontally").toBe(false);
+  });
+
+  test("Export PDF button triggers print and app chrome is hidden in print", async ({ page }) => {
+    const btn = page.getByRole("button", { name: /Export PDF/i });
+    await expect(btn).toBeVisible();
+
+    let printed = false;
+    await page.exposeFunction("__printed", () => { printed = true; });
+    await page.addInitScript(() => {
+      window.print = () => (window as unknown as { __printed: () => void }).__printed();
+    });
+    await page.reload();
+    await page.getByRole("button", { name: /Export PDF/i }).click();
+    await expect.poll(() => printed).toBe(true);
+
+    // print stylesheet drops the sidebar, tabs and the button itself
+    await page.emulateMedia({ media: "print" });
+    await expect(page.locator("aside")).toBeHidden();
+    await expect(page.getByRole("button", { name: /Export PDF/i })).toBeHidden();
+    await expect(page.getByRole("tablist")).toBeHidden();
+    await expect(page.getByRole("table")).toBeVisible();
+    await page.emulateMedia({ media: "screen" });
   });
 
   test("Table B shows a Total column and every allocation cell is N / N", async ({ page }) => {
