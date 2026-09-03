@@ -7,22 +7,37 @@ test.describe("Reports", () => {
     await page.goto("/reports");
   });
 
-  test("Table A shows subjects plus Game Periods and Total Periods columns", async ({ page }) => {
+  test("Table A: compact single-number grid with class teacher and Games/Total columns", async ({ page }) => {
     // default tab is Class/Section x Subject
     const headerRow = page.locator("table thead tr").first();
     await expect(headerRow.getByText("Class / Section")).toBeVisible();
-    await expect(headerRow.getByText("Game Periods")).toBeVisible();
-    await expect(headerRow.getByText("Total Periods")).toBeVisible();
+    await expect(headerRow.getByText("English", { exact: true })).toBeVisible();
+    await expect(headerRow.getByText("Games", { exact: true })).toBeVisible();
+    await expect(headerRow.getByText("Total", { exact: true })).toBeVisible();
 
-    // first column shows the class/section and its class teacher
+    // first column: "1 – A" then just the class teacher name (no "Class teacher:" label)
     const firstCol = page.locator("table tbody tr td:first-child").first();
     await expect(firstCol).toContainText("1 – A");
-    await expect(firstCol).toContainText(/Class teacher: \S/);
+    await expect(firstCol).not.toContainText("Class teacher:");
+    await expect(firstCol).toContainText(/\p{L}{3,}/u); // a teacher name
 
-    // Total Periods cell shows "<scheduled> / <capacity>" and no red over-capacity
-    const totalCells = page.locator("table tbody tr td:last-child");
-    await expect(totalCells.first()).toContainText(/\d+ \/ \d+/);
-    await expect(page.locator("td.text-destructive")).toHaveCount(0);
+    // subject cells are a single number (or a dash), never "N / N"
+    const subjectCell = page.locator('table tbody tr:first-child td:nth-child(2)');
+    await expect(subjectCell).toHaveText(/^(\d+|—)$/);
+
+    // Total cell (last col) is a single number, no over-capacity, nothing red
+    const totalCell = page.locator("table tbody tr:first-child td:last-child");
+    await expect(totalCell).toHaveText(/^\d+$/);
+    await expect(page.locator("table td.text-destructive")).toHaveCount(0);
+
+    // the table fits without a horizontal scrollbar
+    const scrolls = await page.locator("table").evaluateAll((tables) =>
+      tables.some((t) => {
+        const c = t.parentElement as HTMLElement;
+        return c.scrollWidth > c.clientWidth + 1;
+      }),
+    );
+    expect(scrolls, "Table A should not overflow horizontally").toBe(false);
   });
 
   test("Table B shows a Total column and every allocation cell is N / N", async ({ page }) => {

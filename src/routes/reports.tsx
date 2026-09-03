@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMemo } from "react";
 import { naturalCompare } from "@/lib/utils";
-import { DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY } from "@/lib/schedule";
 
 export const Route = createFileRoute("/reports")({ component: ReportsPage });
 
@@ -20,7 +19,6 @@ type Slot = { class_id: string; section_id: string; teacher_id: string; subject_
 type GameAssignment = { section_id: string };
 
 function ReportsPage() {
-  const settingsQ = useQuery({ queryKey: ["settings"], queryFn: async () => (await supabase.from("school_settings").select("*").eq("id", 1).maybeSingle()).data });
   const classesQ = useQuery({ queryKey: ["classes"], queryFn: async () => (await supabase.from("classes").select("*").order("name")).data as Klass[] });
   const sectionsQ = useQuery({ queryKey: ["sections"], queryFn: async () => (await supabase.from("sections").select("*").order("section_name")).data as Section[] });
   const subjectsQ = useQuery({ queryKey: ["subjects"], queryFn: async () => (await supabase.from("subjects").select("*").order("name")).data as Subject[] });
@@ -30,7 +28,6 @@ function ReportsPage() {
   const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("class_id,section_id,teacher_id,subject_id")).data as Slot[] });
   const gamesQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id")).data as GameAssignment[] });
 
-  const settings = settingsQ.data;
   const classes = classesQ.data ?? [];
   const sections = sectionsQ.data ?? [];
   const subjects = subjectsQ.data ?? [];
@@ -39,10 +36,6 @@ function ReportsPage() {
   const allocSubs = allocSubsQ.data ?? [];
   const slots = slotsQ.data ?? [];
   const games = gamesQ.data ?? [];
-
-  const workingDays = settings?.working_days ?? DEFAULT_WORKING_DAYS;
-  const periodsPerDay = settings?.periods_per_day ?? DEFAULT_PERIODS_PER_DAY;
-  const weeklyCapacity = workingDays * periodsPerDay;
 
   // Table A: (class-section) × subject
   const classSectionRows = useMemo(() => {
@@ -70,7 +63,7 @@ function ReportsPage() {
     const allocated = allocSubs.filter((x) => secAllocIds.has(x.allocation_id)).reduce((sum, x) => sum + x.periods, 0);
     const used = slots.filter((s) => s.section_id === sectionId).length;
     const gamePeriods = games.filter((g) => g.section_id === sectionId).length;
-    return { allocated, used, gamePeriods, scheduled: used + gamePeriods };
+    return { allocated, used, gamePeriods };
   };
 
   // per-teacher totals for Table B
@@ -92,14 +85,24 @@ function ReportsPage() {
 
         <TabsContent value="A">
           <Card>
-            <CardContent className="p-0 overflow-auto">
-              <table className="w-full border-collapse text-sm">
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full border-collapse text-sm table-fixed">
                 <thead>
-                  <tr className="bg-muted/50">
-                    <th className="p-2 text-left border-b sticky left-0 bg-muted/50 z-10">Class / Section</th>
-                    {subjects.map((s) => <th key={s.id} className="p-2 text-left border-b border-l whitespace-nowrap">{s.name}</th>)}
-                    <th className="p-2 text-center border-b border-l whitespace-nowrap bg-muted/70">Game Periods</th>
-                    <th className="p-2 text-center border-b border-l whitespace-nowrap bg-muted/70">Total Periods</th>
+                  <tr className="bg-muted/50 align-bottom">
+                    <th className="p-2 text-left border-b w-40">Class / Section</th>
+                    {subjects.map((s) => (
+                      <th key={s.id} className="border-b border-l p-1" title={s.name}>
+                        <div className="mx-auto [writing-mode:vertical-rl] rotate-180 whitespace-nowrap text-xs font-medium py-1">
+                          {s.name}
+                        </div>
+                      </th>
+                    ))}
+                    <th className="border-b border-l p-1 bg-muted/70" title="Game / PT periods">
+                      <div className="mx-auto [writing-mode:vertical-rl] rotate-180 whitespace-nowrap text-xs font-medium py-1">Games</div>
+                    </th>
+                    <th className="border-b border-l p-1 bg-muted/70">
+                      <div className="mx-auto [writing-mode:vertical-rl] rotate-180 whitespace-nowrap text-xs font-medium py-1">Total</div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -107,38 +110,36 @@ function ReportsPage() {
                     const totals = sectionTotals(sec.id);
                     const classTeacher = teachers.find((t) => t.id === sec.class_teacher_id)?.name;
                     return (
-                      <tr key={sec.id}>
-                        <td className="p-2 border-b sticky left-0 bg-card z-10 whitespace-nowrap">
+                      <tr key={sec.id} className="hover:bg-muted/30">
+                        <td className="p-2 border-b w-40">
                           <div className="font-medium">{klass!.name} – {sec.section_name}</div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {classTeacher ? `Class teacher: ${classTeacher}` : "No class teacher"}
-                          </div>
+                          {classTeacher && <div className="text-[11px] text-muted-foreground truncate">{classTeacher}</div>}
                         </td>
                         {subjects.map((sub) => {
                           const data = cellA(sec.id, klass!.id, sub.id);
+                          if (!data) {
+                            return <td key={sub.id} className="border-b border-l text-center text-muted-foreground/30">—</td>;
+                          }
+                          const used = data.reduce((n, d) => n + d.used, 0);
+                          const allocated = data.reduce((n, d) => n + d.allocated, 0);
+                          const title = data
+                            .map((d) => `${d.name}: ${d.used}${d.used !== d.allocated ? ` (allocated ${d.allocated})` : ""}`)
+                            .join(" · ");
                           return (
-                            <td key={sub.id} className="p-2 border-b border-l align-top whitespace-nowrap">
-                              {data ? data.map((d, i) => (
-                                <div key={i} className="text-xs">
-                                  <div className="font-medium">{d.name}</div>
-                                  <div className={d.used > d.allocated ? "text-destructive" : "text-muted-foreground"}>{d.allocated} / {d.used}</div>
-                                </div>
-                              )) : <span className="text-muted-foreground/40">—</span>}
+                            <td
+                              key={sub.id}
+                              title={title}
+                              className={`border-b border-l text-center tabular-nums ${used !== allocated ? "text-destructive font-medium" : ""}`}
+                            >
+                              {used}
                             </td>
                           );
                         })}
-                        <td className="p-2 border-b border-l text-center align-top bg-muted/20">
-                          <span className={totals.gamePeriods > 0 ? "font-medium" : "text-muted-foreground/40"}>
-                            {totals.gamePeriods > 0 ? totals.gamePeriods : "—"}
-                          </span>
+                        <td className="border-b border-l text-center tabular-nums bg-muted/20">
+                          {totals.gamePeriods > 0 ? totals.gamePeriods : <span className="text-muted-foreground/30">—</span>}
                         </td>
-                        <td className="p-2 border-b border-l text-center align-top bg-muted/20 whitespace-nowrap">
-                          <div className={`font-medium ${totals.scheduled > weeklyCapacity ? "text-destructive" : ""}`}>
-                            {totals.scheduled} / {weeklyCapacity}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {totals.used} lessons{totals.gamePeriods > 0 ? ` + ${totals.gamePeriods} game` : ""} · alloc {totals.allocated}
-                          </div>
+                        <td className={`border-b border-l text-center tabular-nums font-semibold bg-muted/20 ${totals.used !== totals.allocated ? "text-destructive" : ""}`}>
+                          {totals.used}
                         </td>
                       </tr>
                     );
@@ -146,9 +147,9 @@ function ReportsPage() {
                 </tbody>
               </table>
               <div className="p-3 text-xs text-muted-foreground border-t">
-                Subject cells: <b>Allocated / Used in timetable</b>. &nbsp;
-                <b>Game Periods</b>: game/PT slots assigned to the section. &nbsp;
-                <b>Total Periods</b>: lessons + game periods scheduled, out of the {workingDays}×{periodsPerDay} = {weeklyCapacity} weekly slots.
+                Each cell = weekly periods assigned for that subject. <b>Total</b> = assigned periods for the section
+                (subjects only; game periods are the separate column). A red number means the timetable count doesn&apos;t
+                match the allocation — hover for detail.
               </div>
             </CardContent>
           </Card>
