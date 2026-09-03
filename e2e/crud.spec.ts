@@ -36,10 +36,23 @@ test("Teachers: create, edit, delete", async ({ page }) => {
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await expect(rowFor().getByText("E2E-001")).toBeVisible();
 
-  // delete
+  // delete (this teacher has no allocations, so it goes straight through)
   page.once("dialog", (d) => d.accept());
   await rowFor().getByRole("button").last().click();
+  await expect(page.getByText(/Teacher deleted/i)).toBeVisible();
   await expect(rowFor()).toHaveCount(0);
+});
+
+test("Teachers: delete is blocked while the teacher still has work", async ({ page }) => {
+  await page.goto("/teachers");
+  const row = page.getByRole("row").filter({ hasText: "Amina Tariq" });
+  await expect(row).toBeVisible();
+  await expect(row.getByText(/\d+ sections? · \d+\/wk/)).toBeVisible(); // workload column populated
+
+  page.on("dialog", (d) => d.dismiss()); // no confirm should appear, but be safe
+  await row.getByRole("button").last().click();
+  await expect(page.getByText(/Can't delete Amina Tariq/i)).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Amina Tariq" })).toBeVisible();
 });
 
 async function pickOption(page: import("@playwright/test").Page, comboIndex: number, name: string) {
