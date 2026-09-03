@@ -66,24 +66,21 @@ test.describe("Reports", () => {
     await page.emulateMedia({ media: "screen" });
   });
 
-  test("Table B shows a Total column and every allocation cell is N / N", async ({ page }) => {
+  test("Table B: compact single-number grid, no red, Total column", async ({ page }) => {
     await page.getByRole("tab", { name: /Teacher × Class\/Section/ }).click();
     const headerRow = page.locator("table thead tr").first();
-    await expect(headerRow.getByText("Teacher")).toBeVisible();
+    await expect(headerRow.getByText("Teacher", { exact: true })).toBeVisible();
+    await expect(headerRow.getByText("1A", { exact: true })).toBeVisible(); // compact section header
     await expect(headerRow.getByText("Total", { exact: true })).toBeVisible();
 
-    // No over-allocation highlighting anywhere in the body.
-    await expect(page.locator("table tbody .text-destructive")).toHaveCount(0);
+    // no mismatch highlighting anywhere
+    await expect(page.locator("table tbody td.text-destructive")).toHaveCount(0);
 
-    // Every filled cell should read "x / x" (allocated == used). Grab a sample.
-    const filled = page.locator("table tbody td span", { hasText: /\d+ \/ \d+/ });
-    await expect(filled.first()).toBeVisible();
-    await expect.poll(() => filled.count()).toBeGreaterThan(20);
-    const count = await filled.count();
-    for (let i = 0; i < Math.min(count, 40); i++) {
-      const txt = (await filled.nth(i).innerText()).trim();
-      const m = txt.match(/^(\d+) \/ (\d+)$/);
-      if (m) expect(m[1], `cell "${txt}"`).toBe(m[2]);
-    }
+    // data cells are a single number or a dash
+    const bodyCells = page.locator("table tbody tr td:not(:first-child)");
+    await expect(bodyCells.first()).toBeVisible();
+    const sample = await bodyCells.evaluateAll((tds) => tds.slice(0, 120).map((td) => td.textContent!.trim()));
+    for (const txt of sample) expect(txt, `cell "${txt}"`).toMatch(/^(\d+|—)$/);
+    expect(sample.filter((t) => /^\d+$/.test(t)).length).toBeGreaterThan(20);
   });
 });

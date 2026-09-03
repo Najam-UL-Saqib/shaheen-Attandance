@@ -177,45 +177,56 @@ function ReportsPage() {
 
         <TabsContent value="B">
           <Card>
-            <CardContent className="p-0 overflow-auto">
-              <table className="w-full border-collapse text-sm">
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full border-collapse text-sm table-fixed">
                 <thead>
                   <tr className="bg-muted/50">
-                    <th className="p-2 text-left border-b sticky left-0 bg-muted/50 z-10">Teacher</th>
+                    <th className="px-2 py-1.5 text-left border-b w-36">Teacher</th>
                     {classSectionRows.map(({ sec, klass }) => (
-                      <th key={sec.id} className="p-2 text-left border-b border-l whitespace-nowrap">{klass!.name} – {sec.section_name}</th>
+                      <th
+                        key={sec.id}
+                        className="border-b border-l px-1 py-1.5 text-center text-xs font-medium"
+                        title={`${klass!.name} – ${sec.section_name}`}
+                      >
+                        {klass!.name}{sec.section_name}
+                      </th>
                     ))}
-                    <th className="p-2 text-center border-b border-l whitespace-nowrap bg-muted/70">Total</th>
+                    <th className="border-b border-l px-1 py-1.5 text-center text-xs font-medium bg-muted/70">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {teachers.map((t) => {
                     const totals = teacherTotals(t.id);
                     return (
-                      <tr key={t.id}>
-                        <td className="p-2 font-medium border-b sticky left-0 bg-card z-10">{t.name}</td>
+                      <tr key={t.id} className="hover:bg-muted/30">
+                        <td className="px-2 py-1 font-medium border-b w-36 truncate whitespace-nowrap" title={t.name}>
+                          {t.name}
+                        </td>
                         {classSectionRows.map(({ sec }) => {
                           const a = allocs.find((x) => x.teacher_id === t.id && x.section_id === sec.id);
-                          if (!a) return <td key={sec.id} className="p-2 border-b border-l text-muted-foreground/40">—</td>;
+                          if (!a) return <td key={sec.id} className="border-b border-l py-1 text-center text-muted-foreground/30">—</td>;
                           const used = slots.filter((s) => s.teacher_id === t.id && s.section_id === sec.id).length;
                           return (
-                            <td key={sec.id} className="p-2 border-b border-l whitespace-nowrap">
-                              <span className={used > a.total_periods ? "text-destructive font-medium" : ""}>{a.total_periods} / {used}</span>
+                            <td
+                              key={sec.id}
+                              title={`allocated ${a.total_periods} · in timetable ${used}`}
+                              className={`border-b border-l py-1 text-center tabular-nums ${used !== a.total_periods ? "text-destructive font-medium" : ""}`}
+                            >
+                              {used}
                             </td>
                           );
                         })}
-                        <td className="p-2 border-b border-l text-center bg-muted/20 whitespace-nowrap">
-                          <span className={`font-medium ${totals.used > totals.allocated ? "text-destructive" : ""}`}>
-                            {totals.allocated} / {totals.used}
-                          </span>
+                        <td className={`border-b border-l py-1 text-center tabular-nums font-semibold bg-muted/20 ${totals.used !== totals.allocated ? "text-destructive" : ""}`}>
+                          {totals.used}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              <div className="p-3 text-xs text-muted-foreground border-t">
-                Format: <b>Allocated / Used in timetable</b>. <b>Total</b> is the teacher's weekly workload across all class/sections.
+              <div className="px-3 py-2 text-xs text-muted-foreground border-t">
+                Each cell = weekly periods the teacher is assigned in that class/section. <b>Total</b> = the teacher&apos;s
+                weekly workload. A red number means the timetable count doesn&apos;t match the allocation — hover for detail.
               </div>
             </CardContent>
           </Card>
