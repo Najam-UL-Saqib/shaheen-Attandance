@@ -17,7 +17,7 @@ test.describe("Reports", () => {
     // first column shows the class/section and its class teacher
     const firstCol = page.locator("table tbody tr td:first-child").first();
     await expect(firstCol).toContainText("1 – A");
-    await expect(firstCol).toContainText(/Class teacher: .+|No class teacher/);
+    await expect(firstCol).toContainText(/Class teacher: \S/);
 
     // Total Periods cell shows "<scheduled> / <capacity>" and no red over-capacity
     const totalCells = page.locator("table tbody tr td:last-child");
