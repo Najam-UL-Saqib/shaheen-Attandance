@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, Pencil, BookCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -17,9 +18,10 @@ import { naturalCompare } from "@/lib/utils";
 export const Route = createFileRoute("/classes")({ component: ClassesPage });
 
 type Klass = { id: string; name: string };
-type Section = { id: string; class_id: string; section_name: string };
+type Section = { id: string; class_id: string; section_name: string; class_teacher_id: string | null };
 type Subject = { id: string; name: string };
 type ClassSubject = { id: string; class_id: string; subject_id: string };
+type Teacher = { id: string; name: string };
 
 function ClassesPage() {
   const qc = useQueryClient();
@@ -54,6 +56,14 @@ function ClassesPage() {
       const { data, error } = await supabase.from("class_subjects").select("*");
       if (error) throw error;
       return data as ClassSubject[];
+    },
+  });
+  const teachersQ = useQuery({
+    queryKey: ["teachers"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("teachers").select("id,name").order("name");
+      if (error) throw error;
+      return data as Teacher[];
     },
   });
 
@@ -111,10 +121,17 @@ function ClassesPage() {
     qc.invalidateQueries({ queryKey: ["class_subjects"] });
   };
 
+  const setClassTeacher = async (sectionId: string, teacherId: string | null) => {
+    const { error } = await supabase.from("sections").update({ class_teacher_id: teacherId }).eq("id", sectionId);
+    if (error) return toast.error(/class_teacher_id/.test(error.message) ? "Run the latest database migration first." : error.message);
+    qc.invalidateQueries({ queryKey: ["sections"] });
+  };
+
   const classes = [...(classesQ.data ?? [])].sort((a, b) => naturalCompare(a.name, b.name));
   const sections = sectionsQ.data ?? [];
   const subjects = subjectsQ.data ?? [];
   const cs = csQ.data ?? [];
+  const teachers = teachersQ.data ?? [];
 
   return (
     <AdminLayout>
@@ -155,15 +172,33 @@ function ClassesPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <Label className="text-xs uppercase text-muted-foreground">Sections</Label>
-                  <div className="flex flex-wrap gap-2 mt-1">
+                  <Label className="text-xs uppercase text-muted-foreground">Sections &amp; class teachers</Label>
+                  <div className="mt-1 space-y-1.5">
                     {secs.length === 0 && <span className="text-sm text-muted-foreground">None yet.</span>}
-                    {secs.map((s) => (
-                      <Badge key={s.id} variant="secondary" className="gap-1 pr-1">
-                        {s.section_name}
-                        <button onClick={() => removeSection(s.id)} className="hover:text-destructive ml-1"><Trash2 className="h-3 w-3" /></button>
-                      </Badge>
-                    ))}
+                    {[...secs]
+                      .sort((a, b) => naturalCompare(a.section_name, b.section_name))
+                      .map((s) => (
+                        <div key={s.id} className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="secondary" className="gap-1 pr-1">
+                            {s.section_name}
+                            <button onClick={() => removeSection(s.id)} className="hover:text-destructive ml-1"><Trash2 className="h-3 w-3" /></button>
+                          </Badge>
+                          <Select
+                            value={s.class_teacher_id ?? "none"}
+                            onValueChange={(v) => setClassTeacher(s.id, v === "none" ? null : v)}
+                          >
+                            <SelectTrigger className="h-8 w-56 text-sm">
+                              <SelectValue placeholder="Class teacher" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No class teacher</SelectItem>
+                              {teachers.map((t) => (
+                                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
                   </div>
                 </div>
                 <div className="flex gap-2 max-w-xs">

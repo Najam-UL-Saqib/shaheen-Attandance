@@ -11,7 +11,7 @@ import { DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY } from "@/lib/schedule";
 export const Route = createFileRoute("/reports")({ component: ReportsPage });
 
 type Klass = { id: string; name: string };
-type Section = { id: string; class_id: string; section_name: string };
+type Section = { id: string; class_id: string; section_name: string; class_teacher_id: string | null };
 type Subject = { id: string; name: string };
 type Teacher = { id: string; name: string };
 type Allocation = { id: string; teacher_id: string; class_id: string; section_id: string; total_periods: number };
@@ -105,9 +105,15 @@ function ReportsPage() {
                 <tbody>
                   {classSectionRows.map(({ sec, klass }) => {
                     const totals = sectionTotals(sec.id);
+                    const classTeacher = teachers.find((t) => t.id === sec.class_teacher_id)?.name;
                     return (
                       <tr key={sec.id}>
-                        <td className="p-2 font-medium border-b sticky left-0 bg-card z-10">{klass!.name} – {sec.section_name}</td>
+                        <td className="p-2 border-b sticky left-0 bg-card z-10 whitespace-nowrap">
+                          <div className="font-medium">{klass!.name} – {sec.section_name}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {classTeacher ? `Class teacher: ${classTeacher}` : "No class teacher"}
+                          </div>
+                        </td>
                         {subjects.map((sub) => {
                           const data = cellA(sec.id, klass!.id, sub.id);
                           return (

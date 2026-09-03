@@ -161,18 +161,21 @@ export type Database = {
       sections: {
         Row: {
           class_id: string
+          class_teacher_id: string | null
           created_at: string
           id: string
           section_name: string
         }
         Insert: {
           class_id: string
+          class_teacher_id?: string | null
           created_at?: string
           id?: string
           section_name: string
         }
         Update: {
           class_id?: string
+          class_teacher_id?: string | null
           created_at?: string
           id?: string
           section_name?: string
@@ -183,6 +186,13 @@ export type Database = {
             columns: ["class_id"]
             isOneToOne: false
             referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sections_class_teacher_id_fkey"
+            columns: ["class_teacher_id"]
+            isOneToOne: false
+            referencedRelation: "teachers"
             referencedColumns: ["id"]
           },
         ]

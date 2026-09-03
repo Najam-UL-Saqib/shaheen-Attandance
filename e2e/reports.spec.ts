@@ -14,8 +14,10 @@ test.describe("Reports", () => {
     await expect(headerRow.getByText("Game Periods")).toBeVisible();
     await expect(headerRow.getByText("Total Periods")).toBeVisible();
 
-    // at least one data row for a class-section
-    await expect(page.getByRole("cell", { name: /^1 – A$/ })).toBeVisible();
+    // first column shows the class/section and its class teacher
+    const firstCol = page.locator("table tbody tr td:first-child").first();
+    await expect(firstCol).toContainText("1 – A");
+    await expect(firstCol).toContainText(/Class teacher: .+|No class teacher/);
 
     // Total Periods cell shows "<scheduled> / <capacity>" and no red over-capacity
     const totalCells = page.locator("table tbody tr td:last-child");
