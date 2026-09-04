@@ -5,10 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileDown, Users } from "lucide-react";
+import { FileDown, Users, AlertTriangle, AlertCircle, Info, CheckCircle2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { naturalCompare } from "@/lib/utils";
 import { countTeacherPeriods, countSectionPeriods } from "@/lib/slots";
+import { computeTimetableWarnings, type Severity } from "@/lib/timetable-warnings";
+import { DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY, MAX_CONSECUTIVE_TEACHING_PERIODS } from "@/lib/schedule";
 
 export const Route = createFileRoute("/reports")({ component: ReportsPage });
 
@@ -34,10 +36,10 @@ const subjLabel = (s: Subject) => s.code?.trim() || SUBJECT_ABBR[s.name] || s.na
 type Allocation = { id: string; teacher_id: string; class_id: string; section_id: string; total_periods: number };
 type AllocSubject = { allocation_id: string; subject_id: string; periods: number };
 type Slot = {
-  class_id: string; section_id: string; teacher_id: string; subject_id: string;
+  class_id: string; section_id: string; teacher_id: string; subject_id: string; room_id: string | null;
   day: number; period: number; group_id: string | null;
 };
-type GameAssignment = { section_id: string };
+type GameAssignment = { section_id: string; day: number; period: number };
 
 function ReportsPage() {
   const [showTeachers, setShowTeachers] = useState(true);
@@ -47,8 +49,9 @@ function ReportsPage() {
   const teachersQ = useQuery({ queryKey: ["teachers"], queryFn: async () => (await supabase.from("teachers").select("*").order("name")).data as Teacher[] });
   const allocsQ = useQuery({ queryKey: ["teacher_allocations"], queryFn: async () => (await supabase.from("teacher_allocations").select("*")).data as Allocation[] });
   const allocSubsQ = useQuery({ queryKey: ["teacher_allocation_subjects"], queryFn: async () => (await supabase.from("teacher_allocation_subjects").select("*")).data as AllocSubject[] });
-  const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("class_id,section_id,teacher_id,subject_id,day,period,group_id")).data as Slot[] });
-  const gamesQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id")).data as GameAssignment[] });
+  const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("class_id,section_id,teacher_id,subject_id,room_id,day,period,group_id")).data as Slot[] });
+  const gamesQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id,day,period")).data as GameAssignment[] });
+  const settingsQ = useQuery({ queryKey: ["settings"], queryFn: async () => (await supabase.from("school_settings").select("*").eq("id", 1).maybeSingle()).data });
 
   const classes = classesQ.data ?? [];
   const sections = sectionsQ.data ?? [];
@@ -58,6 +61,23 @@ function ReportsPage() {
   const allocSubs = allocSubsQ.data ?? [];
   const slots = slotsQ.data ?? [];
   const games = gamesQ.data ?? [];
+
+  const warnings = useMemo(
+    () =>
+      computeTimetableWarnings({
+        classes, sections, subjects, teachers,
+        allocations: allocs, allocationSubjects: allocSubs, slots, games,
+        workingDays: settingsQ.data?.working_days ?? DEFAULT_WORKING_DAYS,
+        periodsPerDay: settingsQ.data?.periods_per_day ?? DEFAULT_PERIODS_PER_DAY,
+        maxConsecutive: settingsQ.data?.max_consecutive_periods ?? MAX_CONSECUTIVE_TEACHING_PERIODS,
+      }),
+    [classes, sections, subjects, teachers, allocs, allocSubs, slots, games, settingsQ.data],
+  );
+  const warnCounts = useMemo(() => {
+    const c = { error: 0, warning: 0, info: 0 } as Record<Severity, number>;
+    warnings.forEach((w) => { c[w.severity]++; });
+    return c;
+  }, [warnings]);
 
   // Table A: (class-section) × subject
   const classSectionRows = useMemo(() => {
@@ -112,6 +132,22 @@ function ReportsPage() {
         <TabsList className="no-print">
           <TabsTrigger value="A">Class/Section × Subject</TabsTrigger>
           <TabsTrigger value="B">Teacher × Class/Section</TabsTrigger>
+          <TabsTrigger value="warnings" className="gap-1.5">
+            Timetable check
+            {warnings.length > 0 && (
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                  warnCounts.error > 0
+                    ? "bg-destructive text-destructive-foreground"
+                    : warnCounts.warning > 0
+                      ? "bg-amber-500 text-white"
+                      : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {warnings.length}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="A">
@@ -265,7 +301,78 @@ function ReportsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="warnings">
+          <WarningsPanel warnings={warnings} counts={warnCounts} />
+        </TabsContent>
       </Tabs>
     </AdminLayout>
+  );
+}
+
+function WarningsPanel({
+  warnings, counts,
+}: {
+  warnings: ReturnType<typeof computeTimetableWarnings>;
+  counts: Record<Severity, number>;
+}) {
+  const meta: Record<Severity, { icon: typeof AlertTriangle; ring: string; text: string; label: string }> = {
+    error: { icon: AlertCircle, ring: "border-l-destructive bg-destructive/5", text: "text-destructive", label: "Must fix" },
+    warning: { icon: AlertTriangle, ring: "border-l-amber-500 bg-amber-500/5", text: "text-amber-600", label: "Should check" },
+    info: { icon: Info, ring: "border-l-blue-500 bg-blue-500/5", text: "text-blue-600", label: "Good to know" },
+  };
+
+  if (warnings.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
+          <CheckCircle2 className="h-10 w-10 text-green-600" />
+          <p className="text-sm font-medium">No problems found.</p>
+          <p className="text-xs text-muted-foreground max-w-sm">
+            Every teacher&apos;s workload matches the timetable, every subject has its periods, and no one is
+            double-booked. Come back here after any timetable change.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 text-xs">
+        {(["error", "warning", "info"] as Severity[]).map((sev) => {
+          const M = meta[sev];
+          return (
+            <span key={sev} className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 ${counts[sev] === 0 ? "opacity-40" : ""}`}>
+              <M.icon className={`h-3.5 w-3.5 ${M.text}`} />
+              <b className="tabular-nums">{counts[sev]}</b> {M.label}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="space-y-2">
+        {warnings.map((w) => {
+          const M = meta[w.severity];
+          return (
+            <div key={w.id} className={`rounded-md border border-l-4 p-3 ${M.ring}`}>
+              <div className="flex items-start gap-2.5">
+                <M.icon className={`h-4 w-4 mt-0.5 shrink-0 ${M.text}`} />
+                <div className="min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{w.category}</div>
+                  <div className="text-sm font-medium">{w.title}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{w.detail}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        This list updates automatically. <b>Must fix</b> items break the timetable; <b>Should check</b> items are
+        usually mistakes; <b>Good to know</b> items are optional tidy-ups.
+      </p>
+    </div>
   );
 }

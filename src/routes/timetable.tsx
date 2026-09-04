@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sparkles, Trash2, AlertTriangle, Gamepad2, Coffee, Users, GitMerge, Plus } from "lucide-react";
 import { DAY_NAMES, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
 import { breakPositionsForClass, type Break, type BreakClass } from "@/lib/breaks";
+import { computeTimetableWarnings } from "@/lib/timetable-warnings";
 import { naturalCompare } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -18,7 +19,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/timetable")({ component: TimetablePage });
 
 type Klass = { id: string; name: string };
-type Section = { id: string; class_id: string; section_name: string };
+type Section = { id: string; class_id: string; section_name: string; class_teacher_id: string | null };
 type Teacher = { id: string; name: string };
 type Subject = { id: string; name: string };
 type Room = { id: string; name: string };
@@ -455,6 +456,19 @@ function TimetablePage() {
     if (breakPositions.includes(i)) periodColumns.push({ type: "break", after: i });
   }
 
+  // Plain-language issues for the section being edited (subset of the Reports
+  // "Timetable check" tab, filtered to this section).
+  const sectionIssues = useMemo(() => {
+    if (!sectionId) return [];
+    const all = computeTimetableWarnings({
+      classes, sections, subjects, teachers,
+      allocations: allocs, allocationSubjects: allocSubs, slots: allSlots, games: allGameAssignments,
+      workingDays: days, periodsPerDay: periods, maxConsecutive,
+    });
+    const secTeachers = new Set(allocs.filter((a) => a.section_id === sectionId).map((a) => a.teacher_id));
+    return all.filter((w) => w.sectionId === sectionId || (w.teacherId && secTeachers.has(w.teacherId)));
+  }, [sectionId, classes, sections, subjects, teachers, allocs, allocSubs, allSlots, allGameAssignments, days, periods, maxConsecutive]);
+
   return (
     <AdminLayout>
       <PageHeader
@@ -496,6 +510,24 @@ function TimetablePage() {
               </span>
             )}
           </div>
+
+          {sectionIssues.length > 0 && (
+            <div className="mb-4 rounded-md border border-l-4 border-l-amber-500 bg-amber-500/5 p-3">
+              <div className="mb-1.5 flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4" />
+                {sectionIssues.length} thing{sectionIssues.length === 1 ? "" : "s"} to fix for this section
+              </div>
+              <ul className="space-y-1 text-xs">
+                {sectionIssues.slice(0, 6).map((w) => (
+                  <li key={w.id} className="flex gap-1.5">
+                    <span className={w.severity === "error" ? "text-destructive" : "text-amber-600"}>•</span>
+                    <span><span className="font-medium">{w.title}</span> {w.detail}</span>
+                  </li>
+                ))}
+                {sectionIssues.length > 6 && <li className="text-muted-foreground">…and {sectionIssues.length - 6} more — see Reports → Timetable check.</li>}
+              </ul>
+            </div>
+          )}
 
           <Card>
             <CardContent className="p-0 overflow-auto">

@@ -66,6 +66,24 @@ test.describe("Reports", () => {
     await page.emulateMedia({ media: "screen" });
   });
 
+  test("Timetable check tab lists issues in plain language (or an all-clear)", async ({ page }) => {
+    await page.getByRole("tab", { name: /Timetable check/ }).click();
+
+    const allClear = page.getByText(/No problems found/i);
+    const legend = page.getByText(/Must fix/).first();
+    // one of the two must render
+    await expect(allClear.or(legend)).toBeVisible();
+
+    if (await legend.isVisible()) {
+      // each issue card carries a category, a one-line title and a "what to do" detail
+      const firstCard = page.locator("div.border-l-4").first();
+      await expect(firstCard).toBeVisible();
+      const txt = (await firstCard.innerText()).toLowerCase();
+      // the detail always points somewhere actionable
+      expect(txt).toMatch(/timetable|workload|settings|classes|page|remove|add/);
+    }
+  });
+
   test("Table B: compact single-number grid, no red, Total column", async ({ page }) => {
     await page.getByRole("tab", { name: /Teacher × Class\/Section/ }).click();
     const headerRow = page.locator("table thead tr").first();
