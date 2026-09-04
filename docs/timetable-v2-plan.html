@@ -1,0 +1,553 @@
+<title>Shaheen Timetable v2 Plan</title>
+<meta name="description" content="The nine post-demo client requirements analysed against the current system, with a phased build plan and the decisions still open." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" />
+
+<style>
+  :root {
+    --ground: #fbfbfd;
+    --raise: #ffffff;
+    --surface: #f0f1f6;
+    --ink: #1a1c2b;
+    --ink-soft: #565a72;
+    --ink-faint: #8b8fa6;
+    --line: #e2e3ec;
+    --line-soft: #ecedf3;
+    --primary: #3d4f9e;
+    --primary-soft: #eef0fa;
+    --ok: #3f7d58;
+    --ok-bg: #e9f2ec;
+    --warn: #9a6410;
+    --warn-bg: #f6eddc;
+    --break: #a8443b;
+    --break-bg: #f6e6e4;
+    --shadow: 0 1px 2px rgba(26, 28, 43, 0.04), 0 8px 24px -12px rgba(26, 28, 43, 0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14151d;
+      --raise: #1b1d27;
+      --surface: #1f2130;
+      --ink: #e7e8f0;
+      --ink-soft: #a6a9be;
+      --ink-faint: #71748c;
+      --line: #2d2f40;
+      --line-soft: #262836;
+      --primary: #93a2e6;
+      --primary-soft: #232741;
+      --ok: #7fc79b;
+      --ok-bg: #1c2c24;
+      --warn: #d8a353;
+      --warn-bg: #2e2415;
+      --break: #e08e85;
+      --break-bg: #2f1e1c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -14px rgba(0, 0, 0, 0.55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14151d;
+    --raise: #1b1d27;
+    --surface: #1f2130;
+    --ink: #e7e8f0;
+    --ink-soft: #a6a9be;
+    --ink-faint: #71748c;
+    --line: #2d2f40;
+    --line-soft: #262836;
+    --primary: #93a2e6;
+    --primary-soft: #232741;
+    --ok: #7fc79b;
+    --ok-bg: #1c2c24;
+    --warn: #d8a353;
+    --warn-bg: #2e2415;
+    --break: #e08e85;
+    --break-bg: #2f1e1c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -14px rgba(0, 0, 0, 0.55);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: clamp(1.5rem, 4vw, 4rem) clamp(1.1rem, 4vw, 2.5rem) 6rem; }
+
+  h1, h2, h3 { font-family: "Archivo", ui-sans-serif, system-ui, sans-serif; font-weight: 700; line-height: 1.15; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -0.02em; }
+  h2 { font-size: clamp(1.35rem, 3vw, 1.75rem); letter-spacing: -0.01em; }
+  h3 { font-size: 1.06rem; font-weight: 600; }
+  p { margin: 0 0 1rem; max-width: 68ch; }
+  a { color: var(--primary); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); }
+  a:hover { border-bottom-color: var(--primary); }
+  strong { font-weight: 600; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.86em; }
+  code { background: var(--surface); padding: 0.1em 0.38em; border-radius: 4px; border: 1px solid var(--line-soft); }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.74rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--primary);
+    margin: 0 0 0.9rem;
+  }
+
+  header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.6rem; margin-bottom: 2.6rem; }
+  header.masthead p.lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 60ch; margin-top: 0.9rem; }
+  .meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; margin-top: 1.4rem; font-family: "JetBrains Mono", monospace; font-size: 0.78rem; color: var(--ink-faint); }
+  .meta span { display: inline-flex; gap: 0.4rem; }
+  .meta b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin: 3.2rem 0; scroll-margin-top: 1.5rem; }
+  section > h2 { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 1.2rem; }
+  section > h2 .n { font-family: "JetBrains Mono", monospace; font-size: 0.9rem; color: var(--ink-faint); font-weight: 500; }
+
+  .callout {
+    background: var(--warn-bg);
+    border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+    border-left: 3px solid var(--warn);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: 1.4rem 0;
+  }
+  .callout h3 { color: var(--warn); margin-bottom: 0.35rem; font-family: "JetBrains Mono", monospace; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .callout p { margin: 0; color: var(--ink); }
+
+  .snapshot { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .snapshot > div { background: var(--raise); padding: 1.1rem 1.2rem; }
+  .snapshot h3 { font-family: "JetBrains Mono", monospace; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.6rem; }
+  .snapshot ul { margin: 0; padding-left: 1.1rem; font-size: 0.92rem; color: var(--ink-soft); }
+  .snapshot li { margin: 0.2rem 0; }
+  .snapshot li b { color: var(--ink); font-weight: 600; }
+
+  .reqs { display: flex; flex-direction: column; gap: 1rem; }
+  .req {
+    background: var(--raise);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1.3rem 1.4rem;
+    box-shadow: var(--shadow);
+  }
+  .req-head { display: flex; align-items: baseline; gap: 0.8rem; margin-bottom: 0.5rem; }
+  .req-head .code { font-family: "JetBrains Mono", monospace; font-weight: 500; font-size: 0.95rem; color: var(--primary); background: var(--primary-soft); padding: 0.15rem 0.5rem; border-radius: 5px; flex: none; }
+  .req-head h3 { font-size: 1.12rem; }
+  .req p { font-size: 0.97rem; color: var(--ink-soft); margin: 0.5rem 0 0.9rem; max-width: 72ch; }
+  .req p.first { margin-top: 0; }
+  .req-meta { display: flex; flex-wrap: wrap; gap: 0.45rem 0.55rem; align-items: center; }
+
+  .tag {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    background: var(--surface);
+    white-space: nowrap;
+  }
+  .tag.eff { border-color: color-mix(in srgb, var(--primary) 25%, transparent); color: var(--primary); background: var(--primary-soft); }
+  .tag.ok { color: var(--ok); background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+  .tag.warn { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+  .tag.brk { color: var(--break); background: var(--break-bg); border-color: color-mix(in srgb, var(--break) 30%, transparent); }
+  .tag .k { color: var(--ink-faint); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.1rem; margin: 0.4rem 0 1.6rem; font-size: 0.82rem; color: var(--ink-soft); }
+  .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+  .dot.brk { background: var(--break); }
+
+  .phases { display: flex; flex-direction: column; gap: 0; margin-top: 0.5rem; border-left: 2px solid var(--line); }
+  .phase { position: relative; padding: 0.3rem 0 1.8rem 1.6rem; }
+  .phase::before { content: ""; position: absolute; left: -7px; top: 0.6rem; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); border: 2px solid var(--ground); }
+  .phase:last-child { padding-bottom: 0.3rem; }
+  .phase .pn { font-family: "JetBrains Mono", monospace; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }
+  .phase h3 { margin: 0.15rem 0 0.5rem; font-size: 1.08rem; }
+  .phase p { font-size: 0.94rem; color: var(--ink-soft); margin: 0 0 0.5rem; }
+  .phase .ships { font-size: 0.9rem; }
+  .phase .ships b { font-family: "JetBrains Mono", monospace; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 500; display: block; margin-bottom: 0.15rem; }
+
+  .decisions { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.75rem; counter-reset: d; }
+  .decisions li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.9rem;
+    background: var(--raise);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+  }
+  .decisions li::before {
+    counter-increment: d;
+    content: "Q" counter(d);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-radius: 5px;
+    padding: 0.2rem 0.5rem;
+    height: fit-content;
+  }
+  .decisions .q { font-weight: 600; color: var(--ink); }
+  .decisions .ctx { display: block; font-weight: 400; color: var(--ink-soft); font-size: 0.92rem; margin-top: 0.2rem; }
+  .decisions .lnk { font-family: "JetBrains Mono", monospace; font-size: 0.72rem; color: var(--ink-faint); }
+
+  table.demo { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin-top: 0.5rem; }
+  table.demo th, table.demo td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line-soft); }
+  table.demo th { font-family: "JetBrains Mono", monospace; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); font-weight: 500; }
+  table.demo td:first-child { font-family: "JetBrains Mono", monospace; font-size: 0.8rem; color: var(--primary); white-space: nowrap; }
+  .pri { font-family: "JetBrains Mono", monospace; font-size: 0.74rem; padding: 0.15rem 0.45rem; border-radius: 4px; }
+  .pri.now { background: var(--ok-bg); color: var(--ok); }
+  .pri.next { background: var(--warn-bg); color: var(--warn); }
+  .pri.later { background: var(--surface); color: var(--ink-faint); }
+
+  hr { border: none; border-top: 1px solid var(--line); margin: 2.6rem 0; }
+  .foot { font-size: 0.86rem; color: var(--ink-faint); margin-top: 3rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    .decisions li { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Post-demo · Shaheen P.S.C., Kallar Sayedan</p>
+    <h1>Shaheen Timetable v2 Plan</h1>
+    <p class="lede">The client watched the demo and came back with nine requirements. Some are quick. Two of them
+      change the core rule the timetable is built on — that one class, and one teacher, do exactly one thing per
+      period. This is the read on all nine, what each one touches, and the order to build them in.</p>
+    <div class="meta">
+      <span><b>Date</b> 4 Sep 2026</span>
+      <span><b>Baseline</b> 29 teachers · 24 sections · 708 weekly periods</span>
+      <span><b>Status</b> awaiting decisions</span>
+    </div>
+  </header>
+
+  <section id="tldr">
+    <h2><span class="n">01</span> The shape of the work</h2>
+    <p>Five of the nine are additive and can land quickly — the day-view reassignment helpers, the emergency
+      relaxation of the 3-consecutive rule, showing teacher names in the report, tests &amp; function days.
+      They need decisions, not architecture.</p>
+    <p>The other two — <strong>combined classes</strong> (one teacher, both sections of Class 9 for Computer) and
+      <strong>elective splits</strong> (in one section, some pupils do Biology while others do Computer, same
+      period, two teachers) — both need a period to hold <em>more than one lesson</em>. That is exactly what the
+      two database rules added last week forbid. Those rules don't get deleted; they get a defined exception.</p>
+    <p>Underneath all of it is the frontend. The data model is sound; the screens assume you already know how a
+      timetable system thinks. That's the real reason the demo felt hard to follow, and it gets its own pass.</p>
+
+    <div class="callout">
+      <h3>What the new requirements break</h3>
+      <p>Migration <code>20260904080901</code> added <code>unique (teacher_id, day, period)</code> and the app
+        already had <code>unique (section_id, day, period)</code>. Combined classes violate the first; elective
+        splits violate the second. Both become conditional: allowed when the lessons share a <code>teaching_group</code>
+        (combined) or an <code>elective_block</code> (split). Reports, auto-generate, and the timetable grid all
+        read those constraints today, so all three change with them.</p>
+    </div>
+  </section>
+
+  <section id="current">
+    <h2><span class="n">02</span> Where the system stands</h2>
+    <p>Everything below already works and is tested (16 unit, 23 end-to-end, a full data-integrity audit). The
+      plan builds on it, not over it.</p>
+    <div class="snapshot">
+      <div>
+        <h3>Data model</h3>
+        <ul>
+          <li><b>subjects</b>, <b>classes</b> (1–12), <b>sections</b> (A/B) + class teacher</li>
+          <li><b>class_subjects</b> — curriculum per class</li>
+          <li><b>teacher_allocations</b> + <b>_subjects</b> — weekly load, split by subject</li>
+          <li><b>timetable_slots</b> — the weekly grid</li>
+          <li><b>timetable_day_overrides</b> — per-date changes (<code>is_game</code>)</li>
+          <li><b>game_period_assignments</b>, <b>school_settings</b></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Screens</h3>
+        <ul>
+          <li>Setup — Subjects, Classes &amp; Sections, Teachers, Rooms</li>
+          <li><b>Workload Allocation</b> — who teaches what, how much</li>
+          <li><b>Timetable</b> — build the weekly grid, auto-generate</li>
+          <li><b>Day View</b> — substitute / free / game, per date</li>
+          <li>Reports — Class×Subject, Teacher×Class</li>
+          <li>Settings — schedule shape, one school-wide break, theme</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Rules enforced</h3>
+        <ul>
+          <li>One lesson per section per period <span class="mono">(DB)</span></li>
+          <li>One lesson per teacher per period <span class="mono">(DB, new)</span></li>
+          <li>≤ <b>3</b> consecutive periods — configurable, hard block</li>
+          <li>Timetable periods ≤ the teacher's allocation</li>
+          <li>Teacher must be allocated to the section</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="reqs">
+    <h2><span class="n">03</span> The nine requirements</h2>
+    <div class="legend">
+      <span><span class="dot ok"></span> additive — no conflict</span>
+      <span><span class="dot warn"></span> needs a decision from the client</span>
+      <span><span class="dot brk"></span> changes a rule / recent work</span>
+      <span class="mono">S·M·L·XL = rough effort</span>
+    </div>
+
+    <div class="reqs">
+
+      <div class="req">
+        <div class="req-head"><span class="code">R1</span><h3>Combine two sections under one teacher</h3></div>
+        <p class="first">Class 9 has A and B. For Computer, one teacher takes both together in one room, one
+          period. It should count as delivered for both sections and as a single period of that teacher's week.</p>
+        <div class="req-meta">
+          <span class="tag brk">breaks <span class="k">teacher/period unique</span></span>
+          <span class="tag warn">decision</span>
+          <span class="tag eff">XL</span>
+          <span class="tag">touches <span class="k">schema · allocation · timetable · auto-gen · reports</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R2</span><h3>Allow &gt;3 consecutive periods in Day&nbsp;View, for emergencies</h3></div>
+        <p class="first">The weekly timetable still refuses it. But when an admin is covering an absence on the
+          day, they can push a teacher past three in a row — the cell just turns a warning colour.</p>
+        <div class="req-meta">
+          <span class="tag ok">additive</span>
+          <span class="tag eff">S</span>
+          <span class="tag">touches <span class="k">day-view save · cell colour</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R3</span><h3>Put the teacher's name back in the report</h3></div>
+        <p class="first">Class×Subject was just trimmed to bare numbers. The client wants the teacher for each
+          class/subject visible again. Full names make the table wide; short names or initials keep it on one
+          screen. A client call.</p>
+        <div class="req-meta">
+          <span class="tag warn">decision <span class="k">name format</span></span>
+          <span class="tag eff">S</span>
+          <span class="tag">touches <span class="k">reports Table&nbsp;A</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R4</span><h3>Elective splits — Biology / Computer in the same period</h3></div>
+        <p class="first">In Pakistan a section isn't uniform: some pupils choose Biology, others Computer. Both
+          run at once, different teachers, different rooms. The section's period holds two parallel lessons, and
+          a pupil's timetable depends on their choice. We track this at the group level, not per pupil.</p>
+        <div class="req-meta">
+          <span class="tag brk">breaks <span class="k">section/period unique</span></span>
+          <span class="tag warn">decision</span>
+          <span class="tag eff">XL</span>
+          <span class="tag">touches <span class="k">schema · curriculum · allocation · timetable · reports · day-view</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R5</span><h3>Cover a teacher who leaves mid-day</h3></div>
+        <p class="first">A teacher takes periods 1–2 then leaves for the day. One action marks them away from
+          period&nbsp;3, lists every lesson of theirs still to come, and lets the admin reassign each.</p>
+        <div class="req-meta">
+          <span class="tag ok">additive</span>
+          <span class="tag eff">M</span>
+          <span class="tag">touches <span class="k">day-view · (optional) absence record</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R6</span><h3>Show who's actually free when reassigning</h3></div>
+        <p class="first">When covering a gap, the picker shows teachers who (a) aren't teaching that period and
+          (b) already teach that class/section. A "show all available teachers" button widens it to anyone free.
+          Busy teachers don't appear as options.</p>
+        <div class="req-meta">
+          <span class="tag ok">additive</span>
+          <span class="tag eff">M</span>
+          <span class="tag">touches <span class="k">day-view substitute picker</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R7</span><h3>Breaks per group of classes, not one for the school</h3></div>
+        <p class="first">Today there's a single "break after period N" for everyone. Instead: create a named
+          break, add the classes it covers, set its timing. Primary and senior sections can break at different
+          points. The grid and auto-generate honour each section's own break.</p>
+        <div class="req-meta">
+          <span class="tag warn">decision <span class="k">per class or per section</span></span>
+          <span class="tag eff">L</span>
+          <span class="tag">touches <span class="k">schema · settings · timetable grid · day-view grid · auto-gen</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R8</span><h3>Test periods &amp; school-function days</h3></div>
+        <p class="first">In Day View, mark a range of a class's periods as <em>Test</em>, optionally with an
+          invigilator (assigning is optional; over-3-consecutive is a warning, not a block). Separately, mark
+          whole classes as tied up in a <em>function</em> so their periods clear.</p>
+        <div class="req-meta">
+          <span class="tag warn">decision <span class="k">scope &amp; range rules</span></span>
+          <span class="tag eff">L</span>
+          <span class="tag">touches <span class="k">override kind · day-view · range UI</span></span>
+        </div>
+      </div>
+
+      <div class="req">
+        <div class="req-head"><span class="code">R9</span><h3>Make the whole thing understandable</h3></div>
+        <p class="first">The demo was hard to follow. Ten flat menu items, screens that assume you know the model,
+          system words ("allocation", "slot", "override"), no sense of what to do first. Reorder around the real
+          workflow, give the dashboard a job, plain language, guided setup, clear empty states, simpler cell
+          dialogs.</p>
+        <div class="req-meta">
+          <span class="tag warn">decision <span class="k">how far to go</span></span>
+          <span class="tag eff">L–XL</span>
+          <span class="tag">touches <span class="k">navigation · dashboard · every screen's copy · onboarding</span></span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="model">
+    <h2><span class="n">04</span> The one model change everything else needs</h2>
+    <p>R1 and R4 are the same shape at bottom: a period can carry more than one lesson, and a lesson can serve
+      more than one section. A single concept covers both.</p>
+    <p><strong>Teaching group.</strong> A named set of <em>(section, subject)</em> pairs taught as one unit.
+      Two kinds:</p>
+    <ul>
+      <li><strong>Combined</strong> — <code>{9A·Computer, 9B·Computer}</code>, one teacher, one room, one slot in
+        the week. Both sections show Computer at that time; the teacher's load counts it once.</li>
+      <li><strong>Elective block</strong> — <code>{9A·Biology, 9A·Computer}</code>, same section, same period,
+        two teachers, two rooms. A section can only run its subjects in parallel inside a declared block.</li>
+    </ul>
+    <p>The two <code>unique</code> constraints keep protecting the normal case and gain one carve-out each:
+      a teacher may hold two slots at one time <em>only</em> if they're the same combined group; a section may
+      hold two slots at one time <em>only</em> if they're the same elective block. Everything that reads the grid
+      today — conflict checks, auto-generate, both report tables — learns the group concept once, here.</p>
+  </section>
+
+  <section id="phases">
+    <h2><span class="n">05</span> Build order</h2>
+    <p>Each phase is shippable on its own. The quick wins (R2, R3, R5, R6) don't wait on the model work and can
+      go first if the next demo needs to show progress.</p>
+
+    <div class="phases">
+      <div class="phase">
+        <div class="pn">Phase 0 · now</div>
+        <h3>Decisions &amp; schema design</h3>
+        <p>Close the eight questions below. Draft the migrations for teaching groups, per-class breaks, and the
+          override <code>kind</code>. No code yet.</p>
+        <p class="ships"><b>ships</b> agreed spec, migration drafts</p>
+      </div>
+      <div class="phase">
+        <div class="pn">Phase 1 · quick wins</div>
+        <h3>Day-view helpers &amp; the report name</h3>
+        <p>R2 (consecutive as warning), R3 (teacher name back), R5 (cover a mid-day departure), R6 (availability
+          picker). Independent of the model work.</p>
+        <p class="ships"><b>ships</b> a visibly better Day View + the report the client asked for</p>
+      </div>
+      <div class="phase">
+        <div class="pn">Phase 2 · foundation</div>
+        <h3>Teaching groups &amp; per-class breaks</h3>
+        <p>R1, R4, R7. The schema, the conditional constraints, allocation and auto-generate updates, the grid
+          learning to draw a shared cell and a per-section break line.</p>
+        <p class="ships"><b>ships</b> combined classes and elective splits working end to end</p>
+      </div>
+      <div class="phase">
+        <div class="pn">Phase 3 · day operations</div>
+        <h3>Tests, functions, absences</h3>
+        <p>R8. Override <code>kind</code> = test / function, range selection, optional invigilator, whole-class
+          function marking. Folds in the R5 absence flow if it isn't already done.</p>
+        <p class="ships"><b>ships</b> a Day View that handles a real school week</p>
+      </div>
+      <div class="phase">
+        <div class="pn">Phase 4 · reports</div>
+        <h3>Reports catch up to the model</h3>
+        <p>Combined and elective lessons shown correctly in both tables; teacher-name format finalised; PDF
+          export still fits.</p>
+        <p class="ships"><b>ships</b> reports that match what's on the timetable</p>
+      </div>
+      <div class="phase">
+        <div class="pn">Phase 5 · usability</div>
+        <h3>The frontend pass</h3>
+        <p>R9. Workflow-ordered navigation, a dashboard that shows state and next steps, plain language, a setup
+          checklist, empty states, simplified cell dialogs. Scope set by the Phase 0 answer.</p>
+        <p class="ships"><b>ships</b> something a new admin can pick up without a walkthrough</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="decisions">
+    <h2><span class="n">06</span> Decisions needed before Phase 1</h2>
+    <ol class="decisions">
+      <li><span><span class="q">Combined class — does it count once or twice against the teacher's weekly load?</span>
+        <span class="ctx">One room, one lesson, so once is the natural answer. Confirm, and confirm it still
+        counts toward each section's own subject total.</span> <span class="lnk">R1</span></span></li>
+
+      <li><span><span class="q">Elective — do we ever need to know which pupil is in which group?</span>
+        <span class="ctx">The system has no pupil records today. Assumption: we track "the section splits into
+        these subjects" and nothing finer. If individual pupil timetables are needed, that's a much bigger piece.</span>
+        <span class="lnk">R4</span></span></li>
+
+      <li><span><span class="q">Which subjects are electives, in which classes?</span>
+        <span class="ctx">e.g. Biology ↔ Computer in Classes 9–10. Needed to seed the elective blocks and adjust
+        the curriculum screen.</span> <span class="lnk">R4</span></span></li>
+
+      <li><span><span class="q">Report — full teacher names, initials, or a "show teachers" toggle?</span>
+        <span class="ctx">Full names bring back the horizontal scroll the last change removed. Initials or
+        surname-only keep it on one page; the toggle gives both.</span> <span class="lnk">R3</span></span></li>
+
+      <li><span><span class="q">Breaks — attached to a class (both sections together) or to a section?</span>
+        <span class="ctx">And can one section have two breaks in a day (e.g. a short break and a lunch)?</span>
+        <span class="lnk">R7</span></span></li>
+
+      <li><span><span class="q">Test periods — still tied to a subject, or just "Test"?</span>
+        <span class="ctx">i.e. does "9-A period 3 is a Maths test" matter, or only "9-A period 3 is a test".
+        Also: is picking a period range (3–5) enough, or do tests need finer control?</span> <span class="lnk">R8</span></span></li>
+
+      <li><span><span class="q">Function days — whole class only, or specific sections? Whole day or a range?</span>
+        <span class="ctx">Decides whether "in a function" is a class-level or section-level mark and whether it
+        takes a period range.</span> <span class="lnk">R8</span></span></li>
+
+      <li><span><span class="q">R9 — how far does the usability pass go for the next demo?</span>
+        <span class="ctx">A light pass (nav order, dashboard, language, empty states) is ~1 week. A guided setup
+        flow and rebuilt dialogs is more. Which one does the next demo need?</span> <span class="lnk">R9</span></span></li>
+    </ol>
+  </section>
+
+  <section id="demo">
+    <h2><span class="n">07</span> Recommendation for the next demo</h2>
+    <p>Lead with Phase 1 — it's fast, it directly answers four of the client's points, and it makes Day View feel
+      solid. Show a working combined class from Phase 2 if the schedule allows. Hold electives and the full
+      usability rebuild for the demo after; they're where the risk is.</p>
+    <table class="demo">
+      <thead><tr><th>Req</th><th>What it is</th><th>For the demo</th></tr></thead>
+      <tbody>
+        <tr><td>R2</td><td>Emergency consecutive periods</td><td><span class="pri now">now</span></td></tr>
+        <tr><td>R3</td><td>Teacher name in report</td><td><span class="pri now">now</span></td></tr>
+        <tr><td>R5</td><td>Cover a mid-day departure</td><td><span class="pri now">now</span></td></tr>
+        <tr><td>R6</td><td>Availability-aware picker</td><td><span class="pri now">now</span></td></tr>
+        <tr><td>R1</td><td>Combined classes</td><td><span class="pri next">next</span></td></tr>
+        <tr><td>R7</td><td>Per-class breaks</td><td><span class="pri next">next</span></td></tr>
+        <tr><td>R9</td><td>Usability — light pass</td><td><span class="pri next">next</span></td></tr>
+        <tr><td>R4</td><td>Elective splits</td><td><span class="pri later">later</span></td></tr>
+        <tr><td>R8</td><td>Tests &amp; functions</td><td><span class="pri later">later</span></td></tr>
+        <tr><td>R9</td><td>Usability — full rebuild</td><td><span class="pri later">later</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <p class="foot">Prepared against <code>main</code> at commit <code>7dcbf56</code>. Nothing here is built yet —
+    it's the map. Answers to §06 unblock Phase 1.</p>
+</div>
