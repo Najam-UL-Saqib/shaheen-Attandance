@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RotateCcw, Gamepad2, Coffee, AlertTriangle, UserX } from "lucide-react";
+import { RotateCcw, Gamepad2, Coffee, AlertTriangle, UserX, ClipboardCheck, PartyPopper } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { dateToDay, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
@@ -35,7 +35,9 @@ type Override = {
   subject_id: string | null;
   room_id: string | null;
   is_game: boolean;
+  kind: OverrideKind;
 };
+type OverrideKind = "regular" | "free" | "game" | "test" | "function";
 type GameAssignment = { section_id: string; day: number; period: number };
 
 function todayStr() {
@@ -156,14 +158,19 @@ function DayViewPage() {
     subjectId: string | null;
     roomId: string | null;
     isGame: boolean;
+    kind: OverrideKind;
   };
 
   const getEffective = (sectionId: string, period: number): Effective => {
     const ov = overrideMap.get(`${sectionId}-${period}`);
-    if (ov) return { source: "override", overrideId: ov.id, teacherId: ov.teacher_id, subjectId: ov.subject_id, roomId: ov.room_id, isGame: ov.is_game };
+    if (ov) {
+      const kind: OverrideKind = ov.kind ?? (ov.is_game ? "game" : "regular");
+      return { source: "override", overrideId: ov.id, teacherId: ov.teacher_id, subjectId: ov.subject_id, roomId: ov.room_id, isGame: kind === "game", kind };
+    }
     const def = defaultSlotMap.get(`${sectionId}-${period}`);
-    if (def) return { source: "default", overrideId: null, teacherId: def.teacher_id, subjectId: def.subject_id, roomId: def.room_id, isGame: false };
-    return { source: "empty", overrideId: null, teacherId: null, subjectId: null, roomId: null, isGame: gameSet.has(`${sectionId}-${period}`) };
+    if (def) return { source: "default", overrideId: null, teacherId: def.teacher_id, subjectId: def.subject_id, roomId: def.room_id, isGame: false, kind: "regular" };
+    const g = gameSet.has(`${sectionId}-${period}`);
+    return { source: "empty", overrideId: null, teacherId: null, subjectId: null, roomId: null, isGame: g, kind: g ? "game" : "regular" };
   };
 
   const periodsForTeacherOnDate = (teacherId: string, excludeSectionId?: string, excludePeriod?: number): number[] => {
@@ -238,7 +245,7 @@ function DayViewPage() {
   const [editTeacher, setEditTeacher] = useState("");
   const [editSubject, setEditSubject] = useState("");
   const [editRoom, setEditRoom] = useState("");
-  const [editMode, setEditMode] = useState<"regular" | "game">("regular");
+  const [editMode, setEditMode] = useState<"regular" | "game" | "test" | "function">("regular");
   const [showAllTeachers, setShowAllTeachers] = useState(false);
 
   const openCell = (sectionId: string, classId: string, period: number) => {
@@ -247,7 +254,7 @@ function DayViewPage() {
     setEditTeacher(eff.teacherId ?? "");
     setEditSubject(eff.subjectId ?? "");
     setEditRoom(eff.roomId ?? "");
-    setEditMode(eff.isGame ? "game" : "regular");
+    setEditMode(eff.kind === "game" ? "game" : eff.kind === "test" ? "test" : eff.kind === "function" ? "function" : "regular");
     setShowAllTeachers(false);
   };
 
@@ -284,14 +291,46 @@ function DayViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, editTeacher, maxConsecutive, overrideMap, defaultSlotMap]);
 
-  const upsertOverride = (payload: Partial<Override> & { section_id: string; class_id: string; period: number }) =>
-    supabase.from("timetable_day_overrides").upsert({ date: selectedDate, is_game: false, ...payload }, { onConflict: "section_id,date,period" });
+  const upsertOverride = (
+    payload: Partial<Override> & { section_id: string; class_id: string; period: number; kind: OverrideKind },
+  ) =>
+    supabase
+      .from("timetable_day_overrides")
+      .upsert({ date: selectedDate, is_game: payload.kind === "game", ...payload }, { onConflict: "section_id,date,period" });
 
   const saveGamePeriod = async () => {
     if (!edit) return;
-    const { error } = await upsertOverride({ class_id: edit.classId, section_id: edit.sectionId, period: edit.period, teacher_id: null, subject_id: null, room_id: null, is_game: true });
+    const { error } = await upsertOverride({ class_id: edit.classId, section_id: edit.sectionId, period: edit.period, teacher_id: null, subject_id: null, room_id: null, kind: "game" });
     if (error) return toast.error(error.message);
     toast.success("Marked as Game period for this date");
+    setEdit(null);
+    qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
+  };
+
+  const saveTestOrFunction = async (kind: "test" | "function") => {
+    if (!edit) return;
+    // an invigilator is optional; warn but allow going over the consecutive limit
+    if (kind === "test" && editTeacher && editWouldBreakConsecutive) {
+      const ok = window.confirm(
+        `${teacherName(editTeacher)} would be on duty more than ${maxConsecutive} periods in a row today.\n\nAssign anyway?`,
+      );
+      if (!ok) return;
+    }
+    if (kind === "test" && editTeacher) {
+      for (const sec of sections) {
+        if (sec.id === edit.sectionId) continue;
+        if (getEffective(sec.id, edit.period).teacherId === editTeacher) {
+          const cls = classes.find((c) => c.id === sec.class_id)?.name;
+          return toast.error(`${teacherName(editTeacher)} is already assigned to ${cls}/${sec.section_name} in period ${edit.period}.`);
+        }
+      }
+    }
+    const { error } = await upsertOverride({
+      class_id: edit.classId, section_id: edit.sectionId, period: edit.period,
+      teacher_id: kind === "test" ? editTeacher || null : null, subject_id: null, room_id: null, kind,
+    });
+    if (error) return toast.error(error.message);
+    toast.success(kind === "test" ? "Marked as a test for this date" : "Marked as a function for this date");
     setEdit(null);
     qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
   };
@@ -299,6 +338,7 @@ function DayViewPage() {
   const saveCell = async () => {
     if (!edit) return;
     if (editMode === "game") return saveGamePeriod();
+    if (editMode === "test" || editMode === "function") return saveTestOrFunction(editMode);
     if (!editTeacher || !editSubject) return toast.error("Pick a teacher and a subject");
 
     // Hard block: a teacher cannot be in two class/sections in the same period.
@@ -325,7 +365,7 @@ function DayViewPage() {
 
     const { error } = await upsertOverride({
       class_id: edit.classId, section_id: edit.sectionId, period: edit.period,
-      teacher_id: editTeacher, subject_id: editSubject, room_id: editRoom || null, is_game: false,
+      teacher_id: editTeacher, subject_id: editSubject, room_id: editRoom || null, kind: "regular",
     });
     if (error) return toast.error(error.message);
     toast.success("Saved for this date");
@@ -335,7 +375,7 @@ function DayViewPage() {
 
   const markFree = async () => {
     if (!edit) return;
-    const { error } = await upsertOverride({ class_id: edit.classId, section_id: edit.sectionId, period: edit.period, teacher_id: null, subject_id: null, room_id: null, is_game: false });
+    const { error } = await upsertOverride({ class_id: edit.classId, section_id: edit.sectionId, period: edit.period, teacher_id: null, subject_id: null, room_id: null, kind: "free" });
     if (error) return toast.error(error.message);
     toast.success("Marked free for this date");
     setEdit(null);
@@ -396,7 +436,7 @@ function DayViewPage() {
         date: selectedDate, class_id: l.classId, section_id: l.sectionId, period: l.period,
         teacher_id: away.subs[l.key] === "__free__" ? null : away.subs[l.key],
         subject_id: away.subs[l.key] === "__free__" ? null : l.subjectId,
-        room_id: null, is_game: false,
+        room_id: null, is_game: false, kind: away.subs[l.key] === "__free__" ? "free" : "regular",
       }));
     if (rows.length === 0) return toast.error("Choose a cover teacher for at least one period.");
     const { error } = await supabase.from("timetable_day_overrides").upsert(rows, { onConflict: "section_id,date,period" });
@@ -406,15 +446,55 @@ function DayViewPage() {
     qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
   };
 
+  // ---------- bulk "tests / function" ----------
+  const [bulk, setBulk] = useState<{ open: boolean; kind: "test" | "function"; classIds: Set<string>; from: number; to: number }>({
+    open: false, kind: "test", classIds: new Set(), from: 1, to: 1,
+  });
+
+  const bulkTargets = useMemo(() => {
+    const out: { key: string; sectionId: string; classId: string; period: number }[] = [];
+    if (bulk.classIds.size === 0) return out;
+    const lo = Math.min(bulk.from, bulk.to);
+    const hi = Math.max(bulk.from, bulk.to);
+    for (const { sec } of classSectionRows) {
+      if (!bulk.classIds.has(sec.class_id)) continue;
+      for (let p = lo; p <= hi; p++) out.push({ key: `${sec.id}-${p}`, sectionId: sec.id, classId: sec.class_id, period: p });
+    }
+    return out;
+  }, [bulk, classSectionRows]);
+
+  const applyBulk = async () => {
+    if (bulkTargets.length === 0) return toast.error("Pick at least one class and a period range.");
+    const label = bulk.kind === "test" ? "Test" : "Function";
+    const ok = window.confirm(
+      `Mark ${bulkTargets.length} period(s) as "${label}" on ${selectedDate}?\n\nAny lesson already scheduled in those periods is replaced for this date only.`,
+    );
+    if (!ok) return;
+    const rows = bulkTargets.map((t) => ({
+      date: selectedDate, class_id: t.classId, section_id: t.sectionId, period: t.period,
+      teacher_id: null, subject_id: null, room_id: null, is_game: false, kind: bulk.kind,
+    }));
+    const { error } = await supabase.from("timetable_day_overrides").upsert(rows, { onConflict: "section_id,date,period" });
+    if (error) return toast.error(error.message);
+    toast.success(`${rows.length} period${rows.length === 1 ? "" : "s"} marked as ${label.toLowerCase()}`);
+    setBulk((b) => ({ ...b, open: false, classIds: new Set() }));
+    qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
+  };
+
   return (
     <AdminLayout>
       <PageHeader
         title="Day View"
         description="What actually runs on one date. Changes here are for that day only — the weekly timetable is untouched."
         actions={
-          <Button variant="outline" onClick={() => setAway((a) => ({ ...a, open: true, subs: {} }))}>
-            <UserX className="h-4 w-4 mr-2" />Teacher away
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setBulk((b) => ({ ...b, open: true, classIds: new Set() }))}>
+              <ClipboardCheck className="h-4 w-4 mr-2" />Tests / function
+            </Button>
+            <Button variant="outline" onClick={() => setAway((a) => ({ ...a, open: true, subs: {} }))}>
+              <UserX className="h-4 w-4 mr-2" />Teacher away
+            </Button>
+          </div>
         }
       />
 
@@ -468,13 +548,18 @@ function DayViewPage() {
                     const period = col.n;
                     const eff = getEffective(sec.id, period);
                     const isGame = eff.isGame;
-                    const overCons = eff.teacherId ? isConsecutiveViolation(eff.teacherId, period) : false;
+                    const overCons = eff.teacherId && (eff.kind === "regular" || eff.kind === "test")
+                      ? isConsecutiveViolation(eff.teacherId, period) : false;
                     return (
                       <td
                         key={period}
                         className={`p-2 border-b border-l align-top cursor-pointer hover:bg-accent/40 min-w-32 ${
                           isGame
                             ? "bg-green-50 dark:bg-green-950/20 border-l-2 border-l-green-500"
+                            : eff.kind === "test"
+                              ? "bg-indigo-50 dark:bg-indigo-950/20 border-l-2 border-l-indigo-500"
+                            : eff.kind === "function"
+                              ? "bg-rose-50 dark:bg-rose-950/20 border-l-2 border-l-rose-500"
                             : overCons
                               ? violationColour(eff.teacherId!)
                               : eff.source === "override"
@@ -486,6 +571,20 @@ function DayViewPage() {
                         {isGame ? (
                           <div className="flex items-center gap-1 text-green-700 dark:text-green-400">
                             <Gamepad2 className="h-3 w-3" /><span className="text-xs font-medium">Game</span>
+                          </div>
+                        ) : eff.kind === "test" ? (
+                          <div className="space-y-0.5 text-indigo-700 dark:text-indigo-300">
+                            <div className="flex items-center gap-1"><ClipboardCheck className="h-3 w-3" /><span className="text-xs font-medium">Test</span></div>
+                            {eff.teacherId && (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                {teacherName(eff.teacherId)}
+                                {overCons && <span title={`More than ${maxConsecutive} periods in a row today`}><AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" /></span>}
+                              </div>
+                            )}
+                          </div>
+                        ) : eff.kind === "function" ? (
+                          <div className="flex items-center gap-1 text-rose-700 dark:text-rose-300">
+                            <PartyPopper className="h-3 w-3" /><span className="text-xs font-medium">Function</span>
                           </div>
                         ) : eff.source === "empty" ? (
                           <div className="text-xs text-muted-foreground/60">+</div>
@@ -530,10 +629,16 @@ function DayViewPage() {
                 : "Currently following the weekly timetable."}
             </p>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant={editMode === "regular" ? "default" : "outline"} onClick={() => setEditMode("regular")}>Regular class</Button>
               <Button type="button" size="sm" variant={editMode === "game" ? "default" : "outline"} className={editMode === "game" ? "bg-green-600 hover:bg-green-700" : ""} onClick={() => setEditMode("game")}>
-                <Gamepad2 className="h-4 w-4 mr-1" /> Game period
+                <Gamepad2 className="h-4 w-4 mr-1" /> Game
+              </Button>
+              <Button type="button" size="sm" variant={editMode === "test" ? "default" : "outline"} className={editMode === "test" ? "bg-indigo-600 hover:bg-indigo-700" : ""} onClick={() => setEditMode("test")}>
+                <ClipboardCheck className="h-4 w-4 mr-1" /> Test
+              </Button>
+              <Button type="button" size="sm" variant={editMode === "function" ? "default" : "outline"} className={editMode === "function" ? "bg-rose-600 hover:bg-rose-700" : ""} onClick={() => setEditMode("function")}>
+                <PartyPopper className="h-4 w-4 mr-1" /> Function
               </Button>
             </div>
 
@@ -541,6 +646,50 @@ function DayViewPage() {
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 <Gamepad2 className="h-10 w-10 text-green-500" />
                 <p className="text-sm text-muted-foreground">Marked as a <strong>Game / PT period</strong> for {selectedDate}. No teacher needed.</p>
+              </div>
+            ) : editMode === "function" ? (
+              <div className="flex flex-col items-center gap-2 py-6 text-center">
+                <PartyPopper className="h-10 w-10 text-rose-500" />
+                <p className="text-sm text-muted-foreground">
+                  This class is busy in a <strong>school function</strong> for {selectedDate}. No lesson runs and no teacher is needed.
+                </p>
+              </div>
+            ) : editMode === "test" ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+                  <span>This period is a <strong>test / exam</strong>. Assigning an invigilator is optional.</span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label>Invigilator (optional)</Label>
+                    {teacherOptions.others.length > 0 && (
+                      <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShowAllTeachers((v) => !v)}>
+                        {showAllTeachers ? "Only this class" : `Show all available (${teacherOptions.others.length})`}
+                      </button>
+                    )}
+                  </div>
+                  <Select value={editTeacher || "__none__"} onValueChange={(v) => setEditTeacher(v === "__none__" ? "" : v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No invigilator</SelectItem>
+                      {teacherOptions.primary.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">From this class</div>}
+                      {teacherOptions.primary.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                      {showAllTeachers && teacherOptions.others.length > 0 && (
+                        <>
+                          <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Other available teachers</div>
+                          {teacherOptions.others.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {editTeacher && editWouldBreakConsecutive && (
+                    <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      This puts {teacherName(editTeacher)} over {maxConsecutive} periods in a row — allowed, you'll be asked to confirm.
+                    </p>
+                  )}
+                </div>
               </div>
             ) : (
               <>
@@ -596,8 +745,94 @@ function DayViewPage() {
           <DialogFooter className="gap-2 flex-wrap">
             <Button variant="ghost" onClick={markFree}>Mark as free</Button>
             <Button variant="ghost" disabled={!currentOverride} onClick={resetCell}>Reset to default</Button>
-            <Button onClick={saveCell} className={editMode === "game" ? "bg-green-600 hover:bg-green-700" : ""}>
-              {editMode === "game" ? "Set as Game" : "Save"}
+            <Button
+              onClick={saveCell}
+              className={
+                editMode === "game" ? "bg-green-600 hover:bg-green-700"
+                : editMode === "test" ? "bg-indigo-600 hover:bg-indigo-700"
+                : editMode === "function" ? "bg-rose-600 hover:bg-rose-700"
+                : ""
+              }
+            >
+              {editMode === "game" ? "Set as Game"
+                : editMode === "test" ? "Set as Test"
+                : editMode === "function" ? "Set as Function"
+                : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- bulk tests / function ---- */}
+      <Dialog open={bulk.open} onOpenChange={(v) => setBulk((b) => ({ ...b, open: v }))}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Tests / function — {selectedDate}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant={bulk.kind === "test" ? "default" : "outline"} className={bulk.kind === "test" ? "bg-indigo-600 hover:bg-indigo-700" : ""} onClick={() => setBulk((b) => ({ ...b, kind: "test" }))}>
+                <ClipboardCheck className="h-4 w-4 mr-1" /> Test / exam
+              </Button>
+              <Button type="button" size="sm" variant={bulk.kind === "function" ? "default" : "outline"} className={bulk.kind === "function" ? "bg-rose-600 hover:bg-rose-700" : ""} onClick={() => setBulk((b) => ({ ...b, kind: "function" }))}>
+                <PartyPopper className="h-4 w-4 mr-1" /> School function
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {bulk.kind === "test"
+                ? "The chosen periods become test slots for both sections of each class. Assign invigilators afterwards by clicking a cell."
+                : "The chosen classes are busy in a function for these periods — no lessons run."}
+            </p>
+
+            <div>
+              <Label>Classes</Label>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {classes.map((c) => (
+                  <label key={c.id} className="flex items-center gap-1.5 text-sm rounded border px-2 py-1 cursor-pointer hover:bg-accent/50">
+                    <input
+                      type="checkbox"
+                      checked={bulk.classIds.has(c.id)}
+                      onChange={(e) =>
+                        setBulk((b) => {
+                          const n = new Set(b.classIds);
+                          if (e.target.checked) n.add(c.id); else n.delete(c.id);
+                          return { ...b, classIds: n };
+                        })
+                      }
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>From period</Label>
+                <Select value={String(bulk.from)} onValueChange={(v) => setBulk((b) => ({ ...b, from: Number(v) }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Array.from({ length: periods }, (_, i) => i + 1).map((p) => <SelectItem key={p} value={String(p)}>Period {p}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>To period</Label>
+                <Select value={String(bulk.to)} onValueChange={(v) => setBulk((b) => ({ ...b, to: Number(v) }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Array.from({ length: periods }, (_, i) => i + 1).map((p) => <SelectItem key={p} value={String(p)}>Period {p}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {bulkTargets.length > 0 && (
+              <p className="text-xs text-muted-foreground">{bulkTargets.length} section-period{bulkTargets.length === 1 ? "" : "s"} will be updated.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBulk((b) => ({ ...b, open: false }))}>Cancel</Button>
+            <Button
+              onClick={applyBulk}
+              disabled={bulkTargets.length === 0}
+              className={bulk.kind === "test" ? "bg-indigo-600 hover:bg-indigo-700" : "bg-rose-600 hover:bg-rose-700"}
+            >
+              Apply
             </Button>
           </DialogFooter>
         </DialogContent>

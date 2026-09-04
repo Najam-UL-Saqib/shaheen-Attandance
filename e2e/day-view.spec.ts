@@ -58,3 +58,26 @@ test("'Teacher away' lists a teacher's remaining lessons and reassigns them", as
 
   await resetDay(page);
 });
+
+test("'Tests / function' marks a period range for a class", async ({ page }) => {
+  await page.getByRole("button", { name: /Tests \/ function/i }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/Tests \/ function —/)).toBeVisible();
+
+  // test mode is the default; tick the first class
+  await dialog.getByRole("checkbox").first().click();
+  // range: from period 1 to period 2
+  await dialog.getByRole("combobox").first().click();
+  await page.getByRole("option", { name: "Period 1" }).click();
+  await dialog.getByRole("combobox").nth(1).click();
+  await page.getByRole("option", { name: "Period 2" }).click();
+
+  page.once("dialog", (d) => d.accept());
+  await dialog.getByRole("button", { name: "Apply" }).click();
+  await expect(page.getByText(/marked as test/i)).toBeVisible();
+
+  // the grid shows Test cells now
+  await expect(page.locator("table tbody").getByText("Test", { exact: true }).first()).toBeVisible();
+
+  await resetDay(page);
+});
