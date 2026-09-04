@@ -45,31 +45,100 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+type TeacherScope = "class" | "all";
+
+// Segmented "This class" / "All available (N)" switch. Both segments always
+// visible so you can flip back and forth.
+function TeacherScopeToggle({
+  scope, onChange, othersCount, className = "",
+}: { scope: TeacherScope; onChange: (s: TeacherScope) => void; othersCount: number; className?: string }) {
+  const seg = (s: TeacherScope, label: string) => (
+    <button
+      type="button"
+      aria-pressed={scope === s}
+      onClick={() => onChange(s)}
+      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+        scope === s ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className={`inline-flex items-center gap-0.5 rounded-md border bg-muted/60 p-0.5 ${className}`}>
+      {seg("class", "This class")}
+      {seg("all", `All available (${othersCount})`)}
+    </div>
+  );
+}
+
 function CoverPicker({
   primary, others, value, onChange,
 }: { primary: Teacher[]; others: Teacher[]; value: string; onChange: (v: string) => void }) {
-  const [expand, setExpand] = useState(false);
+  const [scope, setScope] = useState<TeacherScope>("class");
+  const selectedIsOther = others.some((t) => t.id === value);
+  const showOthers = scope === "all" || selectedIsOther;
   return (
-    <div className="flex items-center gap-2 justify-end">
+    <div className="flex w-full flex-col gap-1.5 sm:w-64">
+      {others.length > 0 && (
+        <TeacherScopeToggle scope={scope} onChange={setScope} othersCount={others.length} className="self-start" />
+      )}
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-8 w-52 text-sm"><SelectValue placeholder="Cover teacher" /></SelectTrigger>
+        <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Choose cover" /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="__free__">Leave free</SelectItem>
+          <SelectItem value="__free__">Leave free — no teacher</SelectItem>
           {primary.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">From this class</div>}
+          {primary.length === 0 && <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">No free teacher from this class</div>}
           {primary.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-          {expand && others.length > 0 && (
+          {showOthers && others.length > 0 && (
             <>
               <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Other available teachers</div>
-              {others.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+              {others.filter((t) => scope === "all" || t.id === value).map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
             </>
           )}
         </SelectContent>
       </Select>
-      {!expand && others.length > 0 && (
-        <button type="button" className="text-xs text-primary hover:underline whitespace-nowrap" onClick={() => setExpand(true)}>
-          +{others.length} others
-        </button>
+    </div>
+  );
+}
+
+// Teacher <Select> with the "This class / All available" scope switch above it.
+// Used for both the cover teacher and the (optional) test invigilator.
+function TeacherPicker({
+  primary, others, value, onChange, scope, onScopeChange, placeholder, noneLabel,
+}: {
+  primary: Teacher[]; others: Teacher[];
+  value: string; onChange: (v: string) => void;
+  scope: TeacherScope; onScopeChange: (s: TeacherScope) => void;
+  placeholder: string; noneLabel?: string;
+}) {
+  const selectedIsOther = others.some((t) => t.id === value);
+  const showOthers = scope === "all" || selectedIsOther;
+  return (
+    <div className="space-y-1.5">
+      {others.length > 0 && (
+        <TeacherScopeToggle scope={scope} onChange={onScopeChange} othersCount={others.length} />
       )}
+      <Select
+        value={value || (noneLabel ? "__none__" : "")}
+        onValueChange={(v) => onChange(v === "__none__" ? "" : v)}
+      >
+        <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+        <SelectContent>
+          {noneLabel && <SelectItem value="__none__">{noneLabel}</SelectItem>}
+          {primary.length === 0 && others.length === 0 && (
+            <div className="p-2 text-sm text-muted-foreground">No teacher is free this period.</div>
+          )}
+          {primary.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">From this class</div>}
+          {primary.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+          {showOthers && others.length > 0 && (
+            <>
+              <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Other available teachers</div>
+              {others.filter((t) => scope === "all" || t.id === value).map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+            </>
+          )}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -246,7 +315,7 @@ function DayViewPage() {
   const [editSubject, setEditSubject] = useState("");
   const [editRoom, setEditRoom] = useState("");
   const [editMode, setEditMode] = useState<"regular" | "game" | "test" | "function">("regular");
-  const [showAllTeachers, setShowAllTeachers] = useState(false);
+  const [teacherScope, setTeacherScope] = useState<TeacherScope>("class");
 
   const openCell = (sectionId: string, classId: string, period: number) => {
     const eff = getEffective(sectionId, period);
@@ -255,7 +324,7 @@ function DayViewPage() {
     setEditSubject(eff.subjectId ?? "");
     setEditRoom(eff.roomId ?? "");
     setEditMode(eff.kind === "game" ? "game" : eff.kind === "test" ? "test" : eff.kind === "function" ? "function" : "regular");
-    setShowAllTeachers(false);
+    setTeacherScope("class");
   };
 
   const subjectsForClass = useMemo(() => {
@@ -327,7 +396,9 @@ function DayViewPage() {
     }
     const { error } = await upsertOverride({
       class_id: edit.classId, section_id: edit.sectionId, period: edit.period,
-      teacher_id: kind === "test" ? editTeacher || null : null, subject_id: null, room_id: null, kind,
+      teacher_id: kind === "test" ? editTeacher || null : null,
+      subject_id: kind === "test" ? editSubject || null : null,
+      room_id: null, kind,
     });
     if (error) return toast.error(error.message);
     toast.success(kind === "test" ? "Marked as a test for this date" : "Marked as a function for this date");
@@ -446,10 +517,23 @@ function DayViewPage() {
     qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
   };
 
+  // Who teaches a given subject to a given section in the weekly timetable —
+  // used to pre-fill the invigilator for a test on that subject.
+  const subjectTeacherInSection = (sectionId: string, subjectId: string): string | null =>
+    allSlots.find((s) => s.section_id === sectionId && s.subject_id === subjectId)?.teacher_id ?? null;
+
   // ---------- bulk "tests / function" ----------
-  const [bulk, setBulk] = useState<{ open: boolean; kind: "test" | "function"; classIds: Set<string>; from: number; to: number }>({
-    open: false, kind: "test", classIds: new Set(), from: 1, to: 1,
-  });
+  const [bulk, setBulk] = useState<{
+    open: boolean; kind: "test" | "function"; classIds: Set<string>; subjectId: string; from: number; to: number;
+  }>({ open: false, kind: "test", classIds: new Set(), subjectId: "", from: 1, to: 1 });
+
+  // subjects studied by at least one of the picked classes (for the test's subject)
+  const bulkSubjectOptions = useMemo(() => {
+    if (bulk.classIds.size === 0) return subjects;
+    const ids = new Set(cs.filter((x) => bulk.classIds.has(x.class_id)).map((x) => x.subject_id));
+    const filtered = subjects.filter((s) => ids.has(s.id));
+    return filtered.length ? filtered : subjects;
+  }, [bulk.classIds, cs, subjects]);
 
   const bulkTargets = useMemo(() => {
     const out: { key: string; sectionId: string; classId: string; period: number }[] = [];
@@ -465,19 +549,46 @@ function DayViewPage() {
 
   const applyBulk = async () => {
     if (bulkTargets.length === 0) return toast.error("Pick at least one class and a period range.");
-    const label = bulk.kind === "test" ? "Test" : "Function";
+    const isTest = bulk.kind === "test";
+    const label = isTest ? "Test" : "Function";
     const ok = window.confirm(
       `Mark ${bulkTargets.length} period(s) as "${label}" on ${selectedDate}?\n\nAny lesson already scheduled in those periods is replaced for this date only.`,
     );
     if (!ok) return;
-    const rows = bulkTargets.map((t) => ({
-      date: selectedDate, class_id: t.classId, section_id: t.sectionId, period: t.period,
-      teacher_id: null, subject_id: null, room_id: null, is_game: false, kind: bulk.kind,
-    }));
+
+    // For a test on a subject: assign that subject's section teacher as invigilator,
+    // but never the same teacher twice in one period.
+    const takenPerPeriod = new Map<number, Set<string>>();
+    bulkTargets.forEach((t) => {
+      const s = takenPerPeriod.get(t.period) ?? new Set<string>();
+      busyInPeriod(t.period, t.sectionId).forEach((id) => s.add(id));
+      takenPerPeriod.set(t.period, s);
+    });
+
+    const rows = bulkTargets.map((t) => {
+      let teacherId: string | null = null;
+      if (isTest && bulk.subjectId) {
+        const cand = subjectTeacherInSection(t.sectionId, bulk.subjectId);
+        const taken = takenPerPeriod.get(t.period)!;
+        if (cand && !taken.has(cand)) {
+          teacherId = cand;
+          taken.add(cand);
+        }
+      }
+      return {
+        date: selectedDate, class_id: t.classId, section_id: t.sectionId, period: t.period,
+        teacher_id: teacherId, subject_id: isTest ? bulk.subjectId || null : null,
+        room_id: null, is_game: false, kind: bulk.kind,
+      };
+    });
     const { error } = await supabase.from("timetable_day_overrides").upsert(rows, { onConflict: "section_id,date,period" });
     if (error) return toast.error(error.message);
-    toast.success(`${rows.length} period${rows.length === 1 ? "" : "s"} marked as ${label.toLowerCase()}`);
-    setBulk((b) => ({ ...b, open: false, classIds: new Set() }));
+    const assigned = rows.filter((r) => r.teacher_id).length;
+    toast.success(
+      `${rows.length} period${rows.length === 1 ? "" : "s"} marked as ${label.toLowerCase()}` +
+        (isTest && bulk.subjectId ? ` · ${assigned} invigilator${assigned === 1 ? "" : "s"} auto-assigned` : ""),
+    );
+    setBulk((b) => ({ ...b, open: false, classIds: new Set(), subjectId: "" }));
     qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
   };
 
@@ -488,7 +599,7 @@ function DayViewPage() {
         description="What actually runs on one date. Changes here are for that day only — the weekly timetable is untouched."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setBulk((b) => ({ ...b, open: true, classIds: new Set() }))}>
+            <Button variant="outline" onClick={() => setBulk((b) => ({ ...b, open: true, classIds: new Set(), subjectId: "" }))}>
               <ClipboardCheck className="h-4 w-4 mr-2" />Tests / function
             </Button>
             <Button variant="outline" onClick={() => setAway((a) => ({ ...a, open: true, subs: {} }))}>
@@ -574,7 +685,10 @@ function DayViewPage() {
                           </div>
                         ) : eff.kind === "test" ? (
                           <div className="space-y-0.5 text-indigo-700 dark:text-indigo-300">
-                            <div className="flex items-center gap-1"><ClipboardCheck className="h-3 w-3" /><span className="text-xs font-medium">Test</span></div>
+                            <div className="flex items-center gap-1">
+                              <ClipboardCheck className="h-3 w-3" />
+                              <span className="text-xs font-medium">{eff.subjectId ? `Test · ${subjectName(eff.subjectId)}` : "Test"}</span>
+                            </div>
                             {eff.teacherId && (
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 {teacherName(eff.teacherId)}
@@ -658,31 +772,41 @@ function DayViewPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm">
                   <ClipboardCheck className="h-4 w-4 text-indigo-500" />
-                  <span>This period is a <strong>test / exam</strong>. Assigning an invigilator is optional.</span>
+                  <span>This period is a <strong>test / exam</strong>.</span>
                 </div>
                 <div>
-                  <div className="flex items-center justify-between">
-                    <Label>Invigilator (optional)</Label>
-                    {teacherOptions.others.length > 0 && (
-                      <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShowAllTeachers((v) => !v)}>
-                        {showAllTeachers ? "Only this class" : `Show all available (${teacherOptions.others.length})`}
-                      </button>
-                    )}
-                  </div>
-                  <Select value={editTeacher || "__none__"} onValueChange={(v) => setEditTeacher(v === "__none__" ? "" : v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Label className="mb-1.5 block">Subject being tested (optional)</Label>
+                  <Select
+                    value={editSubject || "__none__"}
+                    onValueChange={(v) => {
+                      const sid = v === "__none__" ? "" : v;
+                      setEditSubject(sid);
+                      // pre-fill the invigilator with the section's teacher for this subject
+                      if (sid && edit) {
+                        const t = subjectTeacherInSection(edit.sectionId, sid);
+                        if (t) { setEditTeacher(t); setTeacherScope(teacherOptions.primary.some((x) => x.id === t) ? "class" : "all"); }
+                      }
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="No specific subject" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">No invigilator</SelectItem>
-                      {teacherOptions.primary.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">From this class</div>}
-                      {teacherOptions.primary.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                      {showAllTeachers && teacherOptions.others.length > 0 && (
-                        <>
-                          <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Other available teachers</div>
-                          {teacherOptions.others.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                        </>
-                      )}
+                      <SelectItem value="__none__">No specific subject</SelectItem>
+                      {subjectsForClass.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Invigilator (optional)</Label>
+                  <TeacherPicker
+                    primary={teacherOptions.primary}
+                    others={teacherOptions.others}
+                    value={editTeacher}
+                    onChange={setEditTeacher}
+                    scope={teacherScope}
+                    onScopeChange={setTeacherScope}
+                    placeholder="No invigilator"
+                    noneLabel="No invigilator"
+                  />
                   {editTeacher && editWouldBreakConsecutive && (
                     <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
                       <AlertTriangle className="h-3 w-3" />
@@ -694,30 +818,16 @@ function DayViewPage() {
             ) : (
               <>
                 <div>
-                  <div className="flex items-center justify-between">
-                    <Label>Teacher</Label>
-                    {teacherOptions.others.length > 0 && (
-                      <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShowAllTeachers((v) => !v)}>
-                        {showAllTeachers ? "Only this class" : `Show all available (${teacherOptions.others.length})`}
-                      </button>
-                    )}
-                  </div>
-                  <Select value={editTeacher} onValueChange={(v) => { setEditTeacher(v); setEditSubject(""); }}>
-                    <SelectTrigger><SelectValue placeholder="Select a free teacher" /></SelectTrigger>
-                    <SelectContent>
-                      {teacherOptions.primary.length === 0 && teacherOptions.others.length === 0 && (
-                        <div className="p-2 text-sm text-muted-foreground">No teacher is free this period.</div>
-                      )}
-                      {teacherOptions.primary.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">From this class</div>}
-                      {teacherOptions.primary.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                      {showAllTeachers && teacherOptions.others.length > 0 && (
-                        <>
-                          <div className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">Other available teachers</div>
-                          {teacherOptions.others.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <Label className="mb-1.5 block">Teacher</Label>
+                  <TeacherPicker
+                    primary={teacherOptions.primary}
+                    others={teacherOptions.others}
+                    value={editTeacher}
+                    onChange={(v) => { setEditTeacher(v); setEditSubject(""); }}
+                    scope={teacherScope}
+                    onScopeChange={setTeacherScope}
+                    placeholder="Select a free teacher"
+                  />
                   {editWouldBreakConsecutive && (
                     <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
                       <AlertTriangle className="h-3 w-3" />
@@ -772,15 +882,32 @@ function DayViewPage() {
               <Button type="button" size="sm" variant={bulk.kind === "test" ? "default" : "outline"} className={bulk.kind === "test" ? "bg-indigo-600 hover:bg-indigo-700" : ""} onClick={() => setBulk((b) => ({ ...b, kind: "test" }))}>
                 <ClipboardCheck className="h-4 w-4 mr-1" /> Test / exam
               </Button>
-              <Button type="button" size="sm" variant={bulk.kind === "function" ? "default" : "outline"} className={bulk.kind === "function" ? "bg-rose-600 hover:bg-rose-700" : ""} onClick={() => setBulk((b) => ({ ...b, kind: "function" }))}>
+              <Button type="button" size="sm" variant={bulk.kind === "function" ? "default" : "outline"} className={bulk.kind === "function" ? "bg-rose-600 hover:bg-rose-700" : ""} onClick={() => setBulk((b) => ({ ...b, kind: "function", subjectId: "" }))}>
                 <PartyPopper className="h-4 w-4 mr-1" /> School function
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               {bulk.kind === "test"
-                ? "The chosen periods become test slots for both sections of each class. Assign invigilators afterwards by clicking a cell."
+                ? "The chosen periods become test slots for both sections of each class. Pick the subject and its section teacher is set as invigilator automatically."
                 : "The chosen classes are busy in a function for these periods — no lessons run."}
             </p>
+
+            {bulk.kind === "test" && (
+              <div>
+                <Label>Subject being tested (optional)</Label>
+                <Select value={bulk.subjectId || "__none__"} onValueChange={(v) => setBulk((b) => ({ ...b, subjectId: v === "__none__" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="No specific subject" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No specific subject</SelectItem>
+                    {bulkSubjectOptions.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Each section's teacher for this subject is assigned to invigilate. If that would put a teacher over
+                  {" "}{maxConsecutive} periods in a row, the cell is flagged with a warning but still assigned.
+                </p>
+              </div>
+            )}
 
             <div>
               <Label>Classes</Label>
@@ -862,46 +989,60 @@ function DayViewPage() {
           </div>
 
           {away.teacherId && (
-            <div className="mt-2 max-h-80 overflow-auto rounded-md border">
-              {awayLessons.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">
-                  {teacherName(away.teacherId)} has no classes from period {away.fromPeriod} on this date.
-                </p>
-              ) : (
-                <table className="w-full text-sm">
-                  <tbody>
-                    {awayLessons.map((l) => {
-                      const sec = sections.find((s) => s.id === l.sectionId);
-                      const cls = classes.find((c) => c.id === l.classId);
-                      return (
-                        <tr key={l.key} className="border-b last:border-0">
-                          <td className="p-2 whitespace-nowrap">
-                            <span className="font-medium">P{l.period}</span> · {cls?.name}/{sec?.section_name}
-                            <span className="text-muted-foreground"> · {subjectName(l.subjectId) || "—"}</span>
-                          </td>
-                          <td className="p-2 text-right">
-                            {(() => {
-                              const { primary, others } = availableForCover(l.sectionId, l.period);
-                              return (
-                                <CoverPicker
-                                  primary={primary}
-                                  others={others}
-                                  value={away.subs[l.key] ?? ""}
-                                  onChange={(v) => setAway((a) => ({ ...a, subs: { ...a.subs, [l.key]: v } }))}
-                                />
-                              );
-                            })()}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+            awayLessons.length === 0 ? (
+              <p className="mt-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                {teacherName(away.teacherId)} has no classes from period {away.fromPeriod} on {selectedDate}.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{awayLessons.length} lesson{awayLessons.length === 1 ? "" : "s"} to cover</span>
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() =>
+                      setAway((a) => ({ ...a, subs: Object.fromEntries(awayLessons.map((l) => [l.key, "__free__"])) }))
+                    }
+                  >
+                    Leave all free
+                  </button>
+                </div>
+                <div className="max-h-[22rem] space-y-2 overflow-auto pr-1">
+                  {awayLessons.map((l) => {
+                    const sec = sections.find((s) => s.id === l.sectionId);
+                    const cls = classes.find((c) => c.id === l.classId);
+                    const { primary, others } = availableForCover(l.sectionId, l.period);
+                    const chosen = away.subs[l.key];
+                    return (
+                      <div
+                        key={l.key}
+                        className={`rounded-lg border p-3 transition-colors ${chosen ? "border-primary/40 bg-primary/5" : ""}`}
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-semibold tabular-nums">P{l.period}</span>
+                          <span className="text-sm font-medium">{cls?.name} / {sec?.section_name}</span>
+                          <span className="text-xs text-muted-foreground">· {subjectName(l.subjectId) || "—"}</span>
+                        </div>
+                        <CoverPicker
+                          primary={primary}
+                          others={others}
+                          value={chosen ?? ""}
+                          onChange={(v) => setAway((a) => ({ ...a, subs: { ...a.subs, [l.key]: v } }))}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
           )}
 
-          <DialogFooter>
+          <DialogFooter className="items-center">
+            {away.teacherId && awayLessons.length > 0 && (
+              <span className="mr-auto text-xs text-muted-foreground">
+                {awayLessons.filter((l) => away.subs[l.key]).length} of {awayLessons.length} set
+              </span>
+            )}
             <Button variant="ghost" onClick={() => setAway((a) => ({ ...a, open: false }))}>Cancel</Button>
             <Button onClick={applyAway} disabled={awayLessons.length === 0}>Apply cover</Button>
           </DialogFooter>
