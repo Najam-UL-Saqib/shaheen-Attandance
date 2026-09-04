@@ -563,6 +563,7 @@ export type Database = {
           created_at: string
           day: number
           group_id: string | null
+          group_kind: string | null
           id: string
           period: number
           room_id: string | null
@@ -575,6 +576,7 @@ export type Database = {
           created_at?: string
           day: number
           group_id?: string | null
+          group_kind?: string | null
           id?: string
           period: number
           room_id?: string | null
@@ -587,6 +589,7 @@ export type Database = {
           created_at?: string
           day?: number
           group_id?: string | null
+          group_kind?: string | null
           id?: string
           period?: number
           room_id?: string | null

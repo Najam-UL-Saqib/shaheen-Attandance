@@ -86,4 +86,51 @@ test.describe("timetable integrity constraints", () => {
     expect(r.status, r.body).toBe(409);
     expect(r.body).toMatch(/section_id.*day.*period|duplicate key/);
   });
+
+  // Insert grouped rows at an unused cell, assert the DB accepts them, then clean up.
+  async function insertGroup(page: import("@playwright/test").Page, kind: "combined" | "elective") {
+    return page.evaluate(
+      async ({ key, base, kind }) => {
+        const k = Object.keys(localStorage).find((x) => x.includes("auth-token"))!;
+        const tok = JSON.parse(localStorage.getItem(k) as string).access_token;
+        const h = { apikey: key, Authorization: "Bearer " + tok, "Content-Type": "application/json", Prefer: "return=representation" };
+        const sections = await (await fetch(`${base}/sections?select=id,class_id&order=section_name`, { headers: h })).json();
+        const subjects = await (await fetch(`${base}/subjects?select=id&order=name`, { headers: h })).json();
+        const teachers = await (await fetch(`${base}/teachers?select=id&order=name`, { headers: h })).json();
+        const groupId = crypto.randomUUID();
+        const day = 5;
+        const period = 12; // outside the seeded schedule -> guaranteed free
+        const body =
+          kind === "combined"
+            ? [sections[0], sections[1]].map((sec: { id: string; class_id: string }) => ({
+                class_id: sec.class_id, section_id: sec.id, day, period,
+                teacher_id: teachers[0].id, subject_id: subjects[0].id, room_id: null,
+                group_id: groupId, group_kind: "combined",
+              }))
+            : [0, 1].map((i) => ({
+                class_id: sections[0].class_id, section_id: sections[0].id, day, period,
+                teacher_id: teachers[i].id, subject_id: subjects[i].id, room_id: null,
+                group_id: groupId, group_kind: "elective",
+              }));
+        const res = await fetch(`${base}/timetable_slots`, { method: "POST", headers: h, body: JSON.stringify(body) });
+        const text = await res.text();
+        if (res.ok) {
+          const ids = JSON.parse(text).map((r: { id: string }) => r.id);
+          await fetch(`${base}/timetable_slots?id=in.(${ids.join(",")})`, { method: "DELETE", headers: h });
+        }
+        return { status: res.status, body: text };
+      },
+      { key: KEY, base: BASE, kind },
+    );
+  }
+
+  test("a combined lesson may put one teacher in two sections in the same period", async ({ page }) => {
+    const r = await insertGroup(page, "combined");
+    expect(r.status, r.body).toBeLessThan(300);
+  });
+
+  test("an elective block may put two subjects in one section in the same period", async ({ page }) => {
+    const r = await insertGroup(page, "elective");
+    expect(r.status, r.body).toBeLessThan(300);
+  });
 });

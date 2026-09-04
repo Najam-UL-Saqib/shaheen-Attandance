@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Trash2, AlertTriangle, Gamepad2, Coffee } from "lucide-react";
+import { Sparkles, Trash2, AlertTriangle, Gamepad2, Coffee, Users, GitMerge, Plus } from "lucide-react";
 import { DAY_NAMES, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
 import { breakPositionsForClass, type Break, type BreakClass } from "@/lib/breaks";
 import { naturalCompare } from "@/lib/utils";
@@ -24,7 +24,8 @@ type Subject = { id: string; name: string };
 type Room = { id: string; name: string };
 type Allocation = { id: string; teacher_id: string; class_id: string; section_id: string; total_periods: number };
 type AllocSubject = { allocation_id: string; subject_id: string; periods: number };
-type Slot = { id: string; class_id: string; section_id: string; day: number; period: number; teacher_id: string; subject_id: string; room_id: string | null };
+type Slot = { id: string; class_id: string; section_id: string; day: number; period: number; teacher_id: string; subject_id: string; room_id: string | null; group_id: string | null; group_kind: "combined" | "elective" | null };
+type ElectiveOption = { subjectId: string; teacherId: string; roomId: string };
 type GameAssignment = { id: string; class_id: string; section_id: string; day: number; period: number };
 
 function TimetablePage() {
@@ -64,11 +65,18 @@ function TimetablePage() {
   const slots = useMemo(() => allSlots.filter((s) => s.section_id === sectionId), [allSlots, sectionId]);
   const gameAssignments = useMemo(() => allGameAssignments.filter((g) => g.section_id === sectionId), [allGameAssignments, sectionId]);
 
+  // several slots can share a cell (elective block); combined lessons live in
+  // every member section's grid.
+  const slotsAt = (day: number, period: number) => slots.filter((s) => s.day === day && s.period === period);
   const slotMap = useMemo(() => {
-    const m = new Map<string, Slot>();
-    slots.forEach((s) => m.set(`${s.day}-${s.period}`, s));
+    const m = new Map<string, Slot[]>();
+    slots.forEach((s) => {
+      const k = `${s.day}-${s.period}`;
+      m.set(k, [...(m.get(k) ?? []), s]);
+    });
     return m;
   }, [slots]);
+  const firstSlotAt = (day: number, period: number) => slotMap.get(`${day}-${period}`)?.[0];
 
   const gameMap = useMemo(() => {
     const m = new Set<string>();
@@ -79,22 +87,53 @@ function TimetablePage() {
   // teacher allocations for this section
   const sectionAllocs = useMemo(() => allocs.filter((a) => a.section_id === sectionId), [allocs, sectionId]);
 
-  // --- regular cell edit state ---
+  // --- cell edit state ---
   const [edit, setEdit] = useState<{ day: number; period: number } | null>(null);
   const [editTeacher, setEditTeacher] = useState("");
   const [editSubject, setEditSubject] = useState("");
   const [editRoom, setEditRoom] = useState("");
-  const [cellMode, setCellMode] = useState<"regular" | "game">("regular");
+  const [cellMode, setCellMode] = useState<"regular" | "game" | "combined" | "elective">("regular");
+  const [combinedSections, setCombinedSections] = useState<Set<string>>(new Set());
+  const [electiveOptions, setElectiveOptions] = useState<ElectiveOption[]>([]);
+
+  const siblingSections = useMemo(
+    () => sections.filter((s) => s.class_id === classId && s.id !== sectionId),
+    [sections, classId, sectionId],
+  );
 
   const openCell = (day: number, period: number) => {
     const isGame = gameMap.has(`${day}-${period}`);
-    const existing = slotMap.get(`${day}-${period}`);
+    const here = slotsAt(day, period);
     setEdit({ day, period });
-    setCellMode(isGame ? "game" : "regular");
-    setEditTeacher(existing?.teacher_id ?? "");
-    setEditSubject(existing?.subject_id ?? "");
-    setEditRoom(existing?.room_id ?? "");
+    setCombinedSections(new Set());
+    setElectiveOptions([]);
+    setEditTeacher("");
+    setEditSubject("");
+    setEditRoom("");
+
+    if (isGame) { setCellMode("game"); return; }
+    const grouped = here.find((s) => s.group_id);
+    if (grouped?.group_kind === "combined") {
+      setCellMode("combined");
+      setEditTeacher(grouped.teacher_id);
+      setEditSubject(grouped.subject_id);
+      setEditRoom(grouped.room_id ?? "");
+      const otherSecs = allSlots.filter((s) => s.group_id === grouped.group_id && s.section_id !== sectionId).map((s) => s.section_id);
+      setCombinedSections(new Set(otherSecs));
+      return;
+    }
+    if (grouped?.group_kind === "elective") {
+      setCellMode("elective");
+      setElectiveOptions(here.map((s) => ({ subjectId: s.subject_id, teacherId: s.teacher_id, roomId: s.room_id ?? "" })));
+      return;
+    }
+    const one = here[0];
+    setCellMode("regular");
+    setEditTeacher(one?.teacher_id ?? "");
+    setEditSubject(one?.subject_id ?? "");
+    setEditRoom(one?.room_id ?? "");
   };
+
 
   const availableForTeacher = (teacherId: string) => {
     const a = sectionAllocs.find((x) => x.teacher_id === teacherId);
@@ -112,8 +151,12 @@ function TimetablePage() {
 
   const checkConflicts = (day: number, period: number, teacherId: string, roomId: string, ignoreSlotId?: string) => {
     const conflicts: string[] = [];
+    const ignoreGroup = allSlots.find((s) => s.id === ignoreSlotId)?.group_id ?? null;
     if (teacherId) {
-      const c = allSlots.find((s) => s.day === day && s.period === period && s.teacher_id === teacherId && s.id !== ignoreSlotId && s.section_id !== sectionId);
+      const c = allSlots.find(
+        (s) => s.day === day && s.period === period && s.teacher_id === teacherId && s.id !== ignoreSlotId
+          && s.section_id !== sectionId && !(ignoreGroup && s.group_id === ignoreGroup),
+      );
       if (c) {
         const sec = sections.find((x) => x.id === c.section_id);
         const cls = classes.find((x) => x.id === c.class_id);
@@ -134,18 +177,31 @@ function TimetablePage() {
     return conflicts;
   };
 
+  const teacherName = (id: string) => teachers.find((x) => x.id === id)?.name ?? "This teacher";
+  const invalidateSlots = () => qc.invalidateQueries({ queryKey: ["timetable_slots"] });
+
+  // remove every slot currently in a cell of the given section (or the current one)
+  const clearCellSlots = async (day: number, period: number, secId = sectionId) => {
+    const ids = allSlots.filter((s) => s.section_id === secId && s.day === day && s.period === period).map((s) => s.id);
+    if (ids.length) await supabase.from("timetable_slots").delete().in("id", ids);
+  };
+
+  // a teacher already teaching a NON-grouped lesson elsewhere at this time
+  const teacherClashElsewhere = (day: number, period: number, teacherId: string, exceptGroupId?: string | null) =>
+    allSlots.find(
+      (s) => s.day === day && s.period === period && s.teacher_id === teacherId && s.section_id !== sectionId
+        && !(exceptGroupId && s.group_id === exceptGroupId),
+    );
+
   // --- Save / Clear regular cell ---
   const saveCell = async () => {
     if (!edit) return;
+    if (cellMode === "game") return saveAsGame();
+    if (cellMode === "combined") return saveCombined();
+    if (cellMode === "elective") return saveElective();
 
-    // If user switched to game mode inside dialog
-    if (cellMode === "game") {
-      await saveAsGame();
-      return;
-    }
-
-    if (!editTeacher || !editSubject) return toast.error("Pick teacher and subject");
-    const existing = slotMap.get(`${edit.day}-${edit.period}`);
+    if (!editTeacher || !editSubject) return toast.error("Pick a teacher and a subject");
+    const existing = firstSlotAt(edit.day, edit.period);
 
     const a = sectionAllocs.find((x) => x.teacher_id === editTeacher);
     if (!a) return toast.error("This teacher has no allocation for this section.");
@@ -153,53 +209,84 @@ function TimetablePage() {
     if (used + 1 > a.total_periods) {
       return toast.error(`Cannot save: teacher would have ${used + 1} periods but only ${a.total_periods} allocated.`);
     }
-
     if (exceedsTeacherConsecutiveLimit(edit.day, edit.period, editTeacher, existing?.id)) {
       return toast.error(`Cannot save: a teacher must take a break after ${maxConsecutive} consecutive periods.`);
     }
-
-    // Hard block: a teacher cannot be in two class/sections in the same period.
-    const clash = allSlots.find(
-      (s) => s.day === edit.day && s.period === edit.period && s.teacher_id === editTeacher && s.id !== existing?.id && s.section_id !== sectionId,
-    );
+    const clash = teacherClashElsewhere(edit.day, edit.period, editTeacher);
     if (clash) {
       const cls = classes.find((x) => x.id === clash.class_id)?.name ?? "?";
       const sec = sections.find((x) => x.id === clash.section_id)?.section_name ?? "?";
-      const tn = teachers.find((x) => x.id === editTeacher)?.name ?? "This teacher";
-      return toast.error(`${tn} is already teaching ${cls}/${sec} on ${DAY_NAMES[edit.day]} period ${edit.period}.`);
+      return toast.error(`${teacherName(editTeacher)} is already teaching ${cls}/${sec} on ${DAY_NAMES[edit.day]} period ${edit.period}.`);
     }
-
-    // Room clash is a softer warning (rooms are optional / can be shared for events).
     const roomConflicts = editRoom ? checkConflicts(edit.day, edit.period, "", editRoom, existing?.id) : [];
     if (roomConflicts.length && !confirm(roomConflicts.join("\n") + "\n\nSave anyway?")) return;
 
-    // If this cell was previously a game period, remove it
     await removeGameAtCell(edit.day, edit.period);
+    await clearCellSlots(edit.day, edit.period);
 
-    const payload = {
-      class_id: classId,
-      section_id: sectionId,
-      day: edit.day,
-      period: edit.period,
-      teacher_id: editTeacher,
-      subject_id: editSubject,
-      room_id: editRoom || null,
-    };
-    const { error } = existing
-      ? await supabase.from("timetable_slots").update(payload).eq("id", existing.id)
-      : await supabase.from("timetable_slots").insert(payload);
+    const payload = { class_id: classId, section_id: sectionId, day: edit.day, period: edit.period, teacher_id: editTeacher, subject_id: editSubject, room_id: editRoom || null, group_id: null, group_kind: null };
+    const { error } = await supabase.from("timetable_slots").insert(payload);
     if (error) {
-      if (/teacher_day_period/.test(error.message)) {
-        return toast.error("That teacher is already teaching another class/section in this period.");
-      }
-      if (/section_id.*day.*period/.test(error.message)) {
-        return toast.error("This class/section already has a lesson in this period.");
-      }
+      if (/teacher_day_period|teacher_slot/.test(error.message)) return toast.error("That teacher is already teaching another class in this period.");
+      if (/section.*period|section_slot/.test(error.message)) return toast.error("This class/section already has a lesson in this period.");
       return toast.error(error.message);
     }
     toast.success("Saved");
     setEdit(null);
-    qc.invalidateQueries({ queryKey: ["timetable_slots"] });
+    invalidateSlots();
+  };
+
+  const saveCombined = async () => {
+    if (!edit) return;
+    if (!editTeacher || !editSubject) return toast.error("Pick a teacher and a subject");
+    if (combinedSections.size === 0) return toast.error("Pick at least one other section to combine with");
+    const secIds = [sectionId, ...combinedSections];
+
+    if (exceedsTeacherConsecutiveLimit(edit.day, edit.period, editTeacher)) {
+      if (!confirm(`${teacherName(editTeacher)} would go over ${maxConsecutive} periods in a row. Continue?`)) return;
+    }
+    const clash = allSlots.find(
+      (s) => s.day === edit.day && s.period === edit.period && s.teacher_id === editTeacher && !secIds.includes(s.section_id),
+    );
+    if (clash) return toast.error(`${teacherName(editTeacher)} is already teaching elsewhere in this period.`);
+
+    for (const sid of secIds) await clearCellSlots(edit.day, edit.period, sid);
+    const groupId = crypto.randomUUID();
+    const rows = secIds.map((sid) => ({
+      class_id: sections.find((s) => s.id === sid)!.class_id, section_id: sid, day: edit.day, period: edit.period,
+      teacher_id: editTeacher, subject_id: editSubject, room_id: editRoom || null,
+      group_id: groupId, group_kind: "combined" as const,
+    }));
+    const { error } = await supabase.from("timetable_slots").insert(rows);
+    if (error) return toast.error(error.message);
+    toast.success(`Combined lesson across ${secIds.length} sections`);
+    setEdit(null);
+    invalidateSlots();
+  };
+
+  const saveElective = async () => {
+    if (!edit) return;
+    const opts = electiveOptions.filter((o) => o.subjectId && o.teacherId);
+    if (opts.length < 2) return toast.error("An elective block needs at least 2 filled options");
+    if (new Set(opts.map((o) => o.subjectId)).size !== opts.length) return toast.error("Each option must be a different subject");
+
+    for (const o of opts) {
+      const clash = teacherClashElsewhere(edit.day, edit.period, o.teacherId);
+      if (clash) return toast.error(`${teacherName(o.teacherId)} is already teaching elsewhere in this period.`);
+    }
+    await removeGameAtCell(edit.day, edit.period);
+    await clearCellSlots(edit.day, edit.period);
+    const groupId = crypto.randomUUID();
+    const rows = opts.map((o) => ({
+      class_id: classId, section_id: sectionId, day: edit.day, period: edit.period,
+      teacher_id: o.teacherId, subject_id: o.subjectId, room_id: o.roomId || null,
+      group_id: groupId, group_kind: "elective" as const,
+    }));
+    const { error } = await supabase.from("timetable_slots").insert(rows);
+    if (error) return toast.error(error.message);
+    toast.success(`Elective block with ${opts.length} options`);
+    setEdit(null);
+    invalidateSlots();
   };
 
   const removeGameAtCell = async (day: number, period: number) => {
@@ -212,12 +299,8 @@ function TimetablePage() {
 
   const saveAsGame = async () => {
     if (!edit) return;
-    // Remove any regular slot at this cell first
-    const existing = slotMap.get(`${edit.day}-${edit.period}`);
-    if (existing) {
-      await supabase.from("timetable_slots").delete().eq("id", existing.id);
-      qc.invalidateQueries({ queryKey: ["timetable_slots"] });
-    }
+    await clearCellSlots(edit.day, edit.period);
+    invalidateSlots();
     // Upsert game assignment
     const existingGame = allGameAssignments.find((g) => g.section_id === sectionId && g.day === edit.day && g.period === edit.period);
     if (!existingGame) {
@@ -236,12 +319,16 @@ function TimetablePage() {
 
   const clearCell = async () => {
     if (!edit) return;
-    const existing = slotMap.get(`${edit.day}-${edit.period}`);
-    if (existing) {
-      await supabase.from("timetable_slots").delete().eq("id", existing.id);
-      qc.invalidateQueries({ queryKey: ["timetable_slots"] });
+    // clearing a combined lesson clears it for every member section
+    const grouped = slotsAt(edit.day, edit.period).find((s) => s.group_kind === "combined");
+    if (grouped?.group_id) {
+      const ids = allSlots.filter((s) => s.group_id === grouped.group_id).map((s) => s.id);
+      if (ids.length) await supabase.from("timetable_slots").delete().in("id", ids);
+    } else {
+      await clearCellSlots(edit.day, edit.period);
     }
     await removeGameAtCell(edit.day, edit.period);
+    invalidateSlots();
     setEdit(null);
     toast.success("Cleared");
   };
@@ -263,10 +350,12 @@ function TimetablePage() {
     const cap = days * periods - gamePeriodCount;
     if (totalNeed > cap) return toast.error(`Need ${totalNeed} slots but only ${cap} available (after reserving ${gamePeriodCount} game periods).`);
 
-    await supabase.from("timetable_slots").delete().eq("section_id", sectionId);
-    const otherSlots = allSlots.filter((s) => s.section_id !== sectionId);
+    // keep combined/elective lessons; only regenerate ordinary ones
+    await supabase.from("timetable_slots").delete().eq("section_id", sectionId).is("group_id", null);
+    const keptGroupCells = new Set(slots.filter((s) => s.group_id).map((s) => `${s.day}-${s.period}`));
+    const otherSlots = allSlots.filter((s) => s.section_id !== sectionId || s.group_id);
 
-    const placed: Omit<Slot, "id">[] = [];
+    const placed: Array<Omit<Slot, "id" | "group_id" | "group_kind">> = [];
     const teacherBusy = new Set(otherSlots.map((s) => `${s.day}-${s.period}-${s.teacher_id}`));
     const roomBusy = new Set(otherSlots.filter((s) => s.room_id).map((s) => `${s.day}-${s.period}-${s.room_id}`));
     const teacherPeriods = new Map<string, Set<number>>();
@@ -280,8 +369,8 @@ function TimetablePage() {
     for (let d = 1; d <= days; d++) {
       const subjectsToday = new Set<string>();
       for (let p = 1; p <= periods; p++) {
-        // Skip game periods
-        if (gameMap.has(`${d}-${p}`)) continue;
+        // Skip game periods and cells already held by a combined/elective lesson
+        if (gameMap.has(`${d}-${p}`) || keptGroupCells.has(`${d}-${p}`)) continue;
 
         const candidates = needs
           .filter((n) => {
@@ -409,31 +498,40 @@ function TimetablePage() {
                             );
                           }
                           const period = col.n;
-                          const s = slotMap.get(`${day}-${period}`);
+                          const here = slotMap.get(`${day}-${period}`) ?? [];
                           const isGame = gameMap.has(`${day}-${period}`);
-                          const conflicts = s ? checkConflicts(day, period, s.teacher_id, s.room_id ?? "", s.id) : [];
+                          const kind = here[0]?.group_kind;
+                          const conflicts = here.flatMap((s) => checkConflicts(day, period, s.teacher_id, s.room_id ?? "", s.id));
                           return (
                             <td
                               key={period}
                               className={`p-2 border-b border-l align-top cursor-pointer hover:bg-accent/40 min-w-32 ${isGame
                                   ? "bg-green-50 dark:bg-green-950/20 border-l-2 border-l-green-500"
-                                  : conflicts.length
-                                    ? "bg-destructive/10"
-                                    : ""
+                                  : kind === "combined" ? "bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-blue-500"
+                                  : kind === "elective" ? "bg-purple-50 dark:bg-purple-950/20 border-l-2 border-l-purple-500"
+                                  : conflicts.length ? "bg-destructive/10" : ""
                                 }`}
                               onClick={() => openCell(day, period)}
                               title={conflicts.join("; ")}
                             >
                               {isGame ? (
                                 <div className="flex items-center gap-1 text-green-700 dark:text-green-400">
-                                  <Gamepad2 className="h-3 w-3" />
-                                  <span className="text-xs font-medium">Game</span>
+                                  <Gamepad2 className="h-3 w-3" /><span className="text-xs font-medium">Game</span>
                                 </div>
-                              ) : s ? (
-                                <div className="space-y-0.5">
-                                  <div className="font-medium text-xs">{subjects.find((x) => x.id === s.subject_id)?.name}</div>
-                                  <div className="text-xs text-muted-foreground">{teachers.find((x) => x.id === s.teacher_id)?.name}</div>
-                                  {s.room_id && <div className="text-[10px] text-muted-foreground">{rooms.find((r) => r.id === s.room_id)?.name}</div>}
+                              ) : here.length > 0 ? (
+                                <div className="space-y-1">
+                                  {kind && (
+                                    <div className={`text-[9px] font-semibold uppercase tracking-wide ${kind === "combined" ? "text-blue-600" : "text-purple-600"}`}>
+                                      {kind === "combined" ? "Combined" : "Elective"}
+                                    </div>
+                                  )}
+                                  {here.map((s) => (
+                                    <div key={s.id} className="space-y-0.5">
+                                      <div className="font-medium text-xs">{subjects.find((x) => x.id === s.subject_id)?.name}</div>
+                                      <div className="text-xs text-muted-foreground">{teachers.find((x) => x.id === s.teacher_id)?.name}</div>
+                                      {s.room_id && <div className="text-[10px] text-muted-foreground">{rooms.find((r) => r.id === s.room_id)?.name}</div>}
+                                    </div>
+                                  ))}
                                   {conflicts.length > 0 && <AlertTriangle className="h-3 w-3 text-destructive" />}
                                 </div>
                               ) : (
@@ -504,25 +602,94 @@ function TimetablePage() {
           </DialogHeader>
 
           {/* Mode selector */}
-          <div className="flex gap-2 mb-2">
-            <Button
-              size="sm"
-              variant={cellMode === "regular" ? "default" : "outline"}
-              onClick={() => setCellMode("regular")}
-            >
-              Regular period
+          <div className="flex flex-wrap gap-2 mb-2">
+            <Button size="sm" variant={cellMode === "regular" ? "default" : "outline"} onClick={() => setCellMode("regular")}>Regular</Button>
+            <Button size="sm" variant={cellMode === "combined" ? "default" : "outline"}
+              className={cellMode === "combined" ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => { setCellMode("combined"); if (electiveOptions.length) setElectiveOptions([]); }}>
+              <GitMerge className="h-4 w-4 mr-1" /> Combined
             </Button>
-            <Button
-              size="sm"
-              variant={cellMode === "game" ? "default" : "outline"}
-              className={cellMode === "game" ? "bg-green-600 hover:bg-green-700" : ""}
-              onClick={() => setCellMode("game")}
-            >
-              <Gamepad2 className="h-4 w-4 mr-1" /> Game period
+            <Button size="sm" variant={cellMode === "elective" ? "default" : "outline"}
+              className={cellMode === "elective" ? "bg-purple-600 hover:bg-purple-700" : ""}
+              onClick={() => { setCellMode("elective"); if (electiveOptions.length === 0) setElectiveOptions([{ subjectId: "", teacherId: "", roomId: "" }, { subjectId: "", teacherId: "", roomId: "" }]); }}>
+              <Users className="h-4 w-4 mr-1" /> Elective
+            </Button>
+            <Button size="sm" variant={cellMode === "game" ? "default" : "outline"}
+              className={cellMode === "game" ? "bg-green-600 hover:bg-green-700" : ""} onClick={() => setCellMode("game")}>
+              <Gamepad2 className="h-4 w-4 mr-1" /> Game
             </Button>
           </div>
 
-          {cellMode === "regular" ? (
+          {cellMode === "combined" ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">One teacher takes this and other sections together in one room.</p>
+              <div>
+                <Label>Also covers</Label>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {siblingSections.length === 0 && <span className="text-sm text-muted-foreground">No other section in this class.</span>}
+                  {siblingSections.map((s) => (
+                    <label key={s.id} className="flex items-center gap-1.5 text-sm rounded border px-2 py-1 cursor-pointer hover:bg-accent/50">
+                      <input type="checkbox" checked={combinedSections.has(s.id)}
+                        onChange={(e) => setCombinedSections((set) => { const n = new Set(set); e.target.checked ? n.add(s.id) : n.delete(s.id); return n; })} />
+                      Section {s.section_name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label>Subject</Label>
+                <Select value={editSubject} onValueChange={setEditSubject}>
+                  <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                  <SelectContent>{subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Teacher</Label>
+                <Select value={editTeacher} onValueChange={setEditTeacher}>
+                  <SelectTrigger><SelectValue placeholder="Select teacher" /></SelectTrigger>
+                  <SelectContent>{teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Room (optional)</Label>
+                <Select value={editRoom} onValueChange={setEditRoom}>
+                  <SelectTrigger><SelectValue placeholder="No room" /></SelectTrigger>
+                  <SelectContent>{rooms.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : cellMode === "elective" ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">This section splits — pupils go to one option or the other at the same time.</p>
+              {electiveOptions.map((opt, i) => (
+                <div key={i} className="rounded-md border p-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">Option {String.fromCharCode(65 + i)}</span>
+                    {electiveOptions.length > 2 && (
+                      <button className="text-xs text-destructive" onClick={() => setElectiveOptions((o) => o.filter((_, j) => j !== i))}>Remove</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Select value={opt.subjectId} onValueChange={(v) => setElectiveOptions((o) => o.map((x, j) => j === i ? { ...x, subjectId: v } : x))}>
+                      <SelectTrigger className="h-8"><SelectValue placeholder="Subject" /></SelectTrigger>
+                      <SelectContent>{subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Select value={opt.teacherId} onValueChange={(v) => setElectiveOptions((o) => o.map((x, j) => j === i ? { ...x, teacherId: v } : x))}>
+                      <SelectTrigger className="h-8"><SelectValue placeholder="Teacher" /></SelectTrigger>
+                      <SelectContent>{teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Select value={opt.roomId} onValueChange={(v) => setElectiveOptions((o) => o.map((x, j) => j === i ? { ...x, roomId: v } : x))}>
+                      <SelectTrigger className="h-8"><SelectValue placeholder="Room" /></SelectTrigger>
+                      <SelectContent>{rooms.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setElectiveOptions((o) => [...o, { subjectId: "", teacherId: "", roomId: "" }])}>
+                <Plus className="h-4 w-4 mr-1" />Add option
+              </Button>
+            </div>
+          ) : cellMode === "regular" ? (
             <div className="space-y-3">
               <div>
                 <Label>Teacher (must have allocation in this section)</Label>
@@ -567,9 +734,17 @@ function TimetablePage() {
             <Button variant="ghost" onClick={clearCell}>Clear</Button>
             <Button
               onClick={saveCell}
-              className={cellMode === "game" ? "bg-green-600 hover:bg-green-700" : ""}
+              className={
+                cellMode === "game" ? "bg-green-600 hover:bg-green-700"
+                : cellMode === "combined" ? "bg-blue-600 hover:bg-blue-700"
+                : cellMode === "elective" ? "bg-purple-600 hover:bg-purple-700"
+                : ""
+              }
             >
-              {cellMode === "game" ? "Set as Game" : "Save"}
+              {cellMode === "game" ? "Set as Game"
+                : cellMode === "combined" ? "Save combined class"
+                : cellMode === "elective" ? "Save elective block"
+                : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
