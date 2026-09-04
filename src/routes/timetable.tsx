@@ -345,6 +345,13 @@ function TimetablePage() {
       });
     });
 
+    // combined/elective lessons already placed in this section stay put — count
+    // them against the allocation so the generator doesn't add duplicates.
+    slots.filter((s) => s.group_id).forEach((s) => {
+      const need = needs.find((n) => n.teacher_id === s.teacher_id && n.subject_id === s.subject_id);
+      if (need) need.remaining -= 1;
+    });
+
     const gamePeriodCount = gameAssignments.length;
     const totalNeed = needs.reduce((s, n) => s + n.remaining, 0);
     const cap = days * periods - gamePeriodCount;

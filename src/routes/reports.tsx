@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { FileDown, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { naturalCompare } from "@/lib/utils";
+import { countTeacherPeriods, countSectionPeriods } from "@/lib/slots";
 
 export const Route = createFileRoute("/reports")({ component: ReportsPage });
 
@@ -32,7 +33,10 @@ const SUBJECT_ABBR: Record<string, string> = {
 const subjLabel = (s: Subject) => s.code?.trim() || SUBJECT_ABBR[s.name] || s.name;
 type Allocation = { id: string; teacher_id: string; class_id: string; section_id: string; total_periods: number };
 type AllocSubject = { allocation_id: string; subject_id: string; periods: number };
-type Slot = { class_id: string; section_id: string; teacher_id: string; subject_id: string };
+type Slot = {
+  class_id: string; section_id: string; teacher_id: string; subject_id: string;
+  day: number; period: number; group_id: string | null;
+};
 type GameAssignment = { section_id: string };
 
 function ReportsPage() {
@@ -43,7 +47,7 @@ function ReportsPage() {
   const teachersQ = useQuery({ queryKey: ["teachers"], queryFn: async () => (await supabase.from("teachers").select("*").order("name")).data as Teacher[] });
   const allocsQ = useQuery({ queryKey: ["teacher_allocations"], queryFn: async () => (await supabase.from("teacher_allocations").select("*")).data as Allocation[] });
   const allocSubsQ = useQuery({ queryKey: ["teacher_allocation_subjects"], queryFn: async () => (await supabase.from("teacher_allocation_subjects").select("*")).data as AllocSubject[] });
-  const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("class_id,section_id,teacher_id,subject_id")).data as Slot[] });
+  const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("class_id,section_id,teacher_id,subject_id,day,period,group_id")).data as Slot[] });
   const gamesQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id")).data as GameAssignment[] });
 
   const classes = classesQ.data ?? [];
@@ -79,7 +83,7 @@ function ReportsPage() {
   const sectionTotals = (sectionId: string) => {
     const secAllocIds = new Set(allocs.filter((a) => a.section_id === sectionId).map((a) => a.id));
     const allocated = allocSubs.filter((x) => secAllocIds.has(x.allocation_id)).reduce((sum, x) => sum + x.periods, 0);
-    const used = slots.filter((s) => s.section_id === sectionId).length;
+    const used = countSectionPeriods(slots.filter((s) => s.section_id === sectionId));
     const gamePeriods = games.filter((g) => g.section_id === sectionId).length;
     return { allocated, used, gamePeriods };
   };
@@ -87,7 +91,7 @@ function ReportsPage() {
   // per-teacher totals for Table B
   const teacherTotals = (teacherId: string) => {
     const allocated = allocs.filter((a) => a.teacher_id === teacherId).reduce((sum, a) => sum + a.total_periods, 0);
-    const used = slots.filter((s) => s.teacher_id === teacherId).length;
+    const used = countTeacherPeriods(slots.filter((s) => s.teacher_id === teacherId));
     return { allocated, used };
   };
 
@@ -217,11 +221,27 @@ function ReportsPage() {
                         {classSectionRows.map(({ sec }) => {
                           const a = allocs.find((x) => x.teacher_id === t.id && x.section_id === sec.id);
                           if (!a) return <td key={sec.id} className="border-b border-l py-1 text-center text-muted-foreground/30">—</td>;
-                          const used = slots.filter((s) => s.teacher_id === t.id && s.section_id === sec.id).length;
+                          const cellSlots = slots.filter((s) => s.teacher_id === t.id && s.section_id === sec.id);
+                          const used = cellSlots.length;
+                          const combinedWith = cellSlots
+                            .filter((s) => s.group_id)
+                            .flatMap((s) =>
+                              slots
+                                .filter((o) => o.group_id === s.group_id && o.section_id !== sec.id)
+                                .map((o) => {
+                                  const os = sections.find((x) => x.id === o.section_id);
+                                  const oc = classes.find((c) => c.id === o.class_id);
+                                  return os && oc ? `${oc.name}${os.section_name}` : null;
+                                }),
+                            )
+                            .filter((x, i, arr): x is string => !!x && arr.indexOf(x) === i);
+                          const title =
+                            `allocated ${a.total_periods} · in timetable ${used}` +
+                            (combinedWith.length ? ` · ${combinedWith.length} of these are combined with ${combinedWith.join(", ")}` : "");
                           return (
                             <td
                               key={sec.id}
-                              title={`allocated ${a.total_periods} · in timetable ${used}`}
+                              title={title}
                               className={`border-b border-l py-1 text-center tabular-nums ${used !== a.total_periods ? "text-destructive font-medium" : ""}`}
                             >
                               {used}
@@ -238,7 +258,9 @@ function ReportsPage() {
               </table>
               <div className="px-3 py-2 text-xs text-muted-foreground border-t">
                 Each cell = weekly periods the teacher is assigned in that class/section. <b>Total</b> = the teacher&apos;s
-                weekly workload. A red number means the timetable count doesn&apos;t match the allocation — hover for detail.
+                weekly workload, counting a <b>combined</b> lesson once even though it covers two sections — so a teacher who
+                teaches combined classes can legitimately show a Total below their allocated figure. A red number means the
+                timetable count doesn&apos;t match the allocation — hover for detail.
               </div>
             </CardContent>
           </Card>
