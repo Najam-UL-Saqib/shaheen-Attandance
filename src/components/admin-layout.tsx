@@ -18,17 +18,40 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/subjects", label: "Subjects", icon: BookOpen },
-  { to: "/classes", label: "Classes & Sections", icon: GraduationCap },
-  { to: "/teachers", label: "Teachers", icon: Users },
-  { to: "/rooms", label: "Rooms", icon: DoorOpen },
-  { to: "/allocations", label: "Workload Allocation", icon: ClipboardList },
-  { to: "/timetable", label: "Timetable", icon: CalendarDays },
-  { to: "/day-view", label: "Day View", icon: CalendarClock },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
-  { to: "/settings", label: "Settings", icon: Settings },
+// Grouped by the order you actually use them: set the school up, plan the
+// week, run each day, then review.
+const navGroups = [
+  {
+    heading: null,
+    items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    heading: "Set up",
+    items: [
+      { to: "/subjects", label: "Subjects", icon: BookOpen },
+      { to: "/classes", label: "Classes & sections", icon: GraduationCap },
+      { to: "/teachers", label: "Teachers", icon: Users },
+      { to: "/rooms", label: "Rooms", icon: DoorOpen },
+    ],
+  },
+  {
+    heading: "Plan the week",
+    items: [
+      { to: "/allocations", label: "Teacher workload", icon: ClipboardList },
+      { to: "/timetable", label: "Weekly timetable", icon: CalendarDays },
+    ],
+  },
+  {
+    heading: "Run the day",
+    items: [{ to: "/day-view", label: "Day view", icon: CalendarClock }],
+  },
+  {
+    heading: "Review",
+    items: [
+      { to: "/reports", label: "Reports", icon: BarChart3 },
+      { to: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ] as const;
 
 function getDisplayName(email: string | undefined) {
@@ -73,31 +96,40 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             <div className="text-xs opacity-70 truncate">Kallar Sayedan</div>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
-          {nav.map((n) => {
-            const active =
-              n.to === "/"
-                ? location.pathname === "/"
-                : location.pathname.startsWith(n.to);
-            const Icon = n.icon;
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                className={`group relative flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all duration-150 ${
-                  active
-                    ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                    : "hover:bg-sidebar-accent/60 opacity-80 hover:opacity-100"
-                }`}
-              >
-                {active && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r bg-primary" />
-                )}
-                <Icon className={`h-4 w-4 shrink-0 ${active ? "text-primary" : ""}`} />
-                {n.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          {navGroups.map((group, gi) => (
+            <div key={gi} className="space-y-1">
+              {group.heading && (
+                <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider opacity-50">
+                  {group.heading}
+                </div>
+              )}
+              {group.items.map((n) => {
+                const active =
+                  n.to === "/"
+                    ? location.pathname === "/"
+                    : location.pathname.startsWith(n.to);
+                const Icon = n.icon;
+                return (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    className={`group relative flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all duration-150 ${
+                      active
+                        ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                        : "hover:bg-sidebar-accent/60 opacity-80 hover:opacity-100"
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r bg-primary" />
+                    )}
+                    <Icon className={`h-4 w-4 shrink-0 ${active ? "text-primary" : ""}`} />
+                    {n.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-md">

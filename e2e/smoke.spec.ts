@@ -42,9 +42,10 @@ for (const { path, heading } of ROUTES) {
 
 test("sidebar navigation works", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Reports" }).click();
+  const sidebar = page.locator("aside");
+  await sidebar.getByRole("link", { name: "Reports" }).click();
   await expect(page).toHaveURL(/\/reports/);
-  await page.getByRole("link", { name: "Timetable", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Weekly timetable" }).click();
   await expect(page).toHaveURL(/\/timetable/);
 });
 
