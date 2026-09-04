@@ -7,41 +7,41 @@ test.describe("Reports", () => {
     await page.goto("/reports");
   });
 
-  test("Table A: compact single-number grid with class teacher and Games/Total columns", async ({ page }) => {
-    // default tab is Class/Section x Subject
+  test("Table A: abbreviated headers, class teacher, Games/Total, teacher-name toggle", async ({ page }) => {
     const headerRow = page.locator("table thead tr").first();
     await expect(headerRow.getByText("Class / Section")).toBeVisible();
     await expect(headerRow.getByText("Eng", { exact: true })).toBeVisible(); // abbreviated subject header
     await expect(headerRow.getByText("Games", { exact: true })).toBeVisible();
     await expect(headerRow.getByText("Total", { exact: true })).toBeVisible();
 
-    // first column: "1 – A" and the class teacher name on the SAME line, no label
+    // first column: "1 – A" and the class teacher name, no label
     const firstCol = page.locator("table tbody tr td:first-child").first();
     await expect(firstCol).toContainText("1 – A");
     await expect(firstCol).not.toContainText("Class teacher:");
-    await expect(firstCol).toContainText(/\p{L}{3,}/u); // a teacher name
-    // class/section and teacher share one line (no block-level children)
-    await expect(firstCol.locator("div")).toHaveCount(0);
-    const h = await firstCol.evaluate((el) => (el as HTMLElement).offsetHeight);
-    expect(h).toBeLessThan(34);
+    await expect(firstCol).toContainText(/\p{L}{3,}/u);
 
-    // subject cells are a single number (or a dash), never "N / N"
-    const subjectCell = page.locator('table tbody tr:first-child td:nth-child(2)');
-    await expect(subjectCell).toHaveText(/^(\d+|—)$/);
+    // teacher names are shown by default (client request)
+    // English column (5th cell: class/section, Bio, Chem, Comp Sci, English) has data for 1-A
+    const engCell = page.locator("table tbody tr:first-child td:nth-child(5)");
+    await expect(page.getByRole("button", { name: /Hide teacher names/i })).toBeVisible();
 
-    // Total cell (last col) is a single number, no over-capacity, nothing red
+    // toggle OFF -> subject cells become a single number, table fits with no scroll
+    await page.getByRole("button", { name: /Hide teacher names/i }).click();
+    await expect(engCell).toHaveText(/^\d+$/);
     const totalCell = page.locator("table tbody tr:first-child td:last-child");
     await expect(totalCell).toHaveText(/^\d+$/);
     await expect(page.locator("table td.text-destructive")).toHaveCount(0);
-
-    // the table fits without a horizontal scrollbar
     const scrolls = await page.locator("table").evaluateAll((tables) =>
       tables.some((t) => {
         const c = t.parentElement as HTMLElement;
         return c.scrollWidth > c.clientWidth + 1;
       }),
     );
-    expect(scrolls, "Table A should not overflow horizontally").toBe(false);
+    expect(scrolls, "Table A (no names) should not overflow horizontally").toBe(false);
+
+    // toggle back ON -> the cell shows a number and a teacher first name
+    await page.getByRole("button", { name: /Show teacher names/i }).click();
+    await expect(engCell).toHaveText(/^\d+[A-Za-z]/); // e.g. "5Ayesha"
   });
 
   test("Export PDF button triggers print and app chrome is hidden in print", async ({ page }) => {

@@ -5,8 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileDown } from "lucide-react";
-import { useMemo } from "react";
+import { FileDown, Users } from "lucide-react";
+import { useMemo, useState } from "react";
 import { naturalCompare } from "@/lib/utils";
 
 export const Route = createFileRoute("/reports")({ component: ReportsPage });
@@ -36,6 +36,7 @@ type Slot = { class_id: string; section_id: string; teacher_id: string; subject_
 type GameAssignment = { section_id: string };
 
 function ReportsPage() {
+  const [showTeachers, setShowTeachers] = useState(true);
   const classesQ = useQuery({ queryKey: ["classes"], queryFn: async () => (await supabase.from("classes").select("*").order("name")).data as Klass[] });
   const sectionsQ = useQuery({ queryKey: ["sections"], queryFn: async () => (await supabase.from("sections").select("*").order("section_name")).data as Section[] });
   const subjectsQ = useQuery({ queryKey: ["subjects"], queryFn: async () => (await supabase.from("subjects").select("*").order("name")).data as Subject[] });
@@ -110,9 +111,15 @@ function ReportsPage() {
         </TabsList>
 
         <TabsContent value="A">
+          <div className="flex justify-end mb-2 no-print">
+            <Button variant="outline" size="sm" onClick={() => setShowTeachers((v) => !v)}>
+              <Users className="h-4 w-4 mr-2" />
+              {showTeachers ? "Hide teacher names" : "Show teacher names"}
+            </Button>
+          </div>
           <Card>
             <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full border-collapse text-sm table-fixed">
+              <table className={`w-full border-collapse text-sm ${showTeachers ? "" : "table-fixed"}`}>
                 <thead>
                   <tr className="bg-muted/50">
                     <th className="px-2 py-1.5 text-left border-b w-36">Class / Section</th>
@@ -149,9 +156,14 @@ function ReportsPage() {
                             <td
                               key={sub.id}
                               title={title}
-                              className={`border-b border-l py-1 text-center tabular-nums ${used !== allocated ? "text-destructive font-medium" : ""}`}
+                              className={`border-b border-l py-1 px-1 text-center align-top tabular-nums ${used !== allocated ? "text-destructive font-medium" : ""}`}
                             >
-                              {used}
+                              <div>{used}</div>
+                              {showTeachers && (
+                                <div className="text-[10px] leading-tight text-muted-foreground font-normal whitespace-nowrap">
+                                  {data.map((d) => d.name.split(" ")[0]).join(", ")}
+                                </div>
+                              )}
                             </td>
                           );
                         })}
