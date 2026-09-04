@@ -95,6 +95,9 @@ function TimetablePage() {
   const [cellMode, setCellMode] = useState<"regular" | "game" | "combined" | "elective">("regular");
   const [combinedSections, setCombinedSections] = useState<Set<string>>(new Set());
   const [electiveOptions, setElectiveOptions] = useState<ElectiveOption[]>([]);
+  // sibling sections this elective block also covers (each option is taught to
+  // every one of these sections together)
+  const [electiveSections, setElectiveSections] = useState<Set<string>>(new Set());
 
   const siblingSections = useMemo(
     () => sections.filter((s) => s.class_id === classId && s.id !== sectionId),
@@ -107,6 +110,7 @@ function TimetablePage() {
     setEdit({ day, period });
     setCombinedSections(new Set());
     setElectiveOptions([]);
+    setElectiveSections(new Set());
     setEditTeacher("");
     setEditSubject("");
     setEditRoom("");
@@ -124,7 +128,13 @@ function TimetablePage() {
     }
     if (grouped?.group_kind === "elective") {
       setCellMode("elective");
-      setElectiveOptions(here.map((s) => ({ subjectId: s.subject_id, teacherId: s.teacher_id, roomId: s.room_id ?? "" })));
+      // one option per distinct subject in the group
+      const groupRows = allSlots.filter((s) => s.group_id === grouped.group_id);
+      const bySubject = new Map<string, Slot>();
+      groupRows.forEach((s) => { if (!bySubject.has(s.subject_id)) bySubject.set(s.subject_id, s); });
+      setElectiveOptions([...bySubject.values()].map((s) => ({ subjectId: s.subject_id, teacherId: s.teacher_id, roomId: s.room_id ?? "" })));
+      const otherSecs = groupRows.map((s) => s.section_id).filter((id) => id !== sectionId);
+      setElectiveSections(new Set(otherSecs));
       return;
     }
     const one = here[0];
@@ -270,21 +280,36 @@ function TimetablePage() {
     if (opts.length < 2) return toast.error("An elective block needs at least 2 filled options");
     if (new Set(opts.map((o) => o.subjectId)).size !== opts.length) return toast.error("Each option must be a different subject");
 
+    const secIds = [sectionId, ...electiveSections];
     for (const o of opts) {
-      const clash = teacherClashElsewhere(edit.day, edit.period, o.teacherId);
+      // the option's teacher must be free everywhere except inside this block
+      const clash = allSlots.find(
+        (s) => s.day === edit.day && s.period === edit.period && s.teacher_id === o.teacherId && !secIds.includes(s.section_id),
+      );
       if (clash) return toast.error(`${teacherName(o.teacherId)} is already teaching elsewhere in this period.`);
     }
+    // a teacher can only take one option in the block
+    if (new Set(opts.map((o) => o.teacherId)).size !== opts.length) {
+      return toast.error("Each option needs a different teacher — one teacher can't take two options at once.");
+    }
+
     await removeGameAtCell(edit.day, edit.period);
-    await clearCellSlots(edit.day, edit.period);
+    for (const sid of secIds) await clearCellSlots(edit.day, edit.period, sid);
     const groupId = crypto.randomUUID();
-    const rows = opts.map((o) => ({
-      class_id: classId, section_id: sectionId, day: edit.day, period: edit.period,
-      teacher_id: o.teacherId, subject_id: o.subjectId, room_id: o.roomId || null,
-      group_id: groupId, group_kind: "elective" as const,
-    }));
+    const rows = secIds.flatMap((sid) =>
+      opts.map((o) => ({
+        class_id: sections.find((s) => s.id === sid)!.class_id, section_id: sid, day: edit.day, period: edit.period,
+        teacher_id: o.teacherId, subject_id: o.subjectId, room_id: o.roomId || null,
+        group_id: groupId, group_kind: "elective" as const,
+      })),
+    );
     const { error } = await supabase.from("timetable_slots").insert(rows);
     if (error) return toast.error(error.message);
-    toast.success(`Elective block with ${opts.length} options`);
+    toast.success(
+      secIds.length > 1
+        ? `Elective block (${opts.length} options) across ${secIds.length} sections`
+        : `Elective block with ${opts.length} options`,
+    );
     setEdit(null);
     invalidateSlots();
   };
@@ -319,8 +344,9 @@ function TimetablePage() {
 
   const clearCell = async () => {
     if (!edit) return;
-    // clearing a combined lesson clears it for every member section
-    const grouped = slotsAt(edit.day, edit.period).find((s) => s.group_kind === "combined");
+    // clearing a grouped lesson (combined or section-shared elective) clears it
+    // for every member section
+    const grouped = slotsAt(edit.day, edit.period).find((s) => s.group_id);
     if (grouped?.group_id) {
       const ids = allSlots.filter((s) => s.group_id === grouped.group_id).map((s) => s.id);
       if (ids.length) await supabase.from("timetable_slots").delete().in("id", ids);
@@ -508,6 +534,9 @@ function TimetablePage() {
                           const here = slotMap.get(`${day}-${period}`) ?? [];
                           const isGame = gameMap.has(`${day}-${period}`);
                           const kind = here[0]?.group_kind;
+                          const groupId = here[0]?.group_id;
+                          const sharedAcrossSections =
+                            !!groupId && new Set(allSlots.filter((s) => s.group_id === groupId).map((s) => s.section_id)).size > 1;
                           const conflicts = here.flatMap((s) => checkConflicts(day, period, s.teacher_id, s.room_id ?? "", s.id));
                           return (
                             <td
@@ -530,6 +559,7 @@ function TimetablePage() {
                                   {kind && (
                                     <div className={`text-[9px] font-semibold uppercase tracking-wide ${kind === "combined" ? "text-blue-600" : "text-purple-600"}`}>
                                       {kind === "combined" ? "Combined" : "Elective"}
+                                      {kind === "elective" && sharedAcrossSections ? " · shared" : ""}
                                     </div>
                                   )}
                                   {here.map((s) => (
@@ -613,7 +643,7 @@ function TimetablePage() {
             <Button size="sm" variant={cellMode === "regular" ? "default" : "outline"} onClick={() => setCellMode("regular")}>Regular</Button>
             <Button size="sm" variant={cellMode === "combined" ? "default" : "outline"}
               className={cellMode === "combined" ? "bg-blue-600 hover:bg-blue-700" : ""}
-              onClick={() => { setCellMode("combined"); if (electiveOptions.length) setElectiveOptions([]); }}>
+              onClick={() => { setCellMode("combined"); if (electiveOptions.length) setElectiveOptions([]); setElectiveSections(new Set()); }}>
               <GitMerge className="h-4 w-4 mr-1" /> Combined
             </Button>
             <Button size="sm" variant={cellMode === "elective" ? "default" : "outline"}
@@ -667,7 +697,10 @@ function TimetablePage() {
             </div>
           ) : cellMode === "elective" ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">This section splits — pupils go to one option or the other at the same time.</p>
+              <p className="text-xs text-muted-foreground">
+                The section splits — pupils go to one option or the other at the same time, each with its own teacher.
+                Tick sibling sections below to run the same split across them together.
+              </p>
               {electiveOptions.map((opt, i) => (
                 <div key={i} className="rounded-md border p-2 space-y-2">
                   <div className="flex items-center justify-between">
@@ -695,6 +728,27 @@ function TimetablePage() {
               <Button variant="outline" size="sm" onClick={() => setElectiveOptions((o) => [...o, { subjectId: "", teacherId: "", roomId: "" }])}>
                 <Plus className="h-4 w-4 mr-1" />Add option
               </Button>
+
+              {siblingSections.length > 0 && (
+                <div className="pt-1">
+                  <Label>Also covers</Label>
+                  <p className="text-[11px] text-muted-foreground mb-1">
+                    Run this same split in another section too — each option's teacher takes both sections together.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {siblingSections.map((s) => (
+                      <label key={s.id} className="flex items-center gap-1.5 text-sm rounded border px-2 py-1 cursor-pointer hover:bg-accent/50">
+                        <input
+                          type="checkbox"
+                          checked={electiveSections.has(s.id)}
+                          onChange={(e) => setElectiveSections((set) => { const n = new Set(set); e.target.checked ? n.add(s.id) : n.delete(s.id); return n; })}
+                        />
+                        Section {s.section_name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : cellMode === "regular" ? (
             <div className="space-y-3">

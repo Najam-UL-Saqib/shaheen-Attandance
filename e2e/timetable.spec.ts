@@ -88,7 +88,10 @@ test.describe("timetable integrity constraints", () => {
   });
 
   // Insert grouped rows at an unused cell, assert the DB accepts them, then clean up.
-  async function insertGroup(page: import("@playwright/test").Page, kind: "combined" | "elective") {
+  async function insertGroup(
+    page: import("@playwright/test").Page,
+    kind: "combined" | "elective" | "shared-elective" | "dup-subject",
+  ) {
     return page.evaluate(
       async ({ key, base, kind }) => {
         const k = Object.keys(localStorage).find((x) => x.includes("auth-token"))!;
@@ -97,21 +100,36 @@ test.describe("timetable integrity constraints", () => {
         const sections = await (await fetch(`${base}/sections?select=id,class_id&order=section_name`, { headers: h })).json();
         const subjects = await (await fetch(`${base}/subjects?select=id&order=name`, { headers: h })).json();
         const teachers = await (await fetch(`${base}/teachers?select=id&order=name`, { headers: h })).json();
-        const groupId = crypto.randomUUID();
+        const g = crypto.randomUUID();
         const day = 5;
         const period = 12; // outside the seeded schedule -> guaranteed free
-        const body =
-          kind === "combined"
-            ? [sections[0], sections[1]].map((sec: { id: string; class_id: string }) => ({
-                class_id: sec.class_id, section_id: sec.id, day, period,
-                teacher_id: teachers[0].id, subject_id: subjects[0].id, room_id: null,
-                group_id: groupId, group_kind: "combined",
-              }))
-            : [0, 1].map((i) => ({
-                class_id: sections[0].class_id, section_id: sections[0].id, day, period,
-                teacher_id: teachers[i].id, subject_id: subjects[i].id, room_id: null,
-                group_id: groupId, group_kind: "elective",
-              }));
+        const s0 = sections[0], s1 = sections[1];
+        let body: Record<string, unknown>[];
+        if (kind === "combined") {
+          body = [s0, s1].map((sec: { id: string; class_id: string }) => ({
+            class_id: sec.class_id, section_id: sec.id, day, period,
+            teacher_id: teachers[0].id, subject_id: subjects[0].id, room_id: null, group_id: g, group_kind: "combined",
+          }));
+        } else if (kind === "elective") {
+          body = [0, 1].map((i) => ({
+            class_id: s0.class_id, section_id: s0.id, day, period,
+            teacher_id: teachers[i].id, subject_id: subjects[i].id, room_id: null, group_id: g, group_kind: "elective",
+          }));
+        } else if (kind === "shared-elective") {
+          // 2 subjects x 2 sections, one group: a split run across both sections together
+          body = [];
+          for (const sec of [s0, s1]) for (const i of [0, 1])
+            body.push({
+              class_id: sec.class_id, section_id: sec.id, day, period,
+              teacher_id: teachers[i].id, subject_id: subjects[i].id, room_id: null, group_id: g, group_kind: "elective",
+            });
+        } else {
+          // same (section, subject) twice in one group -> must be rejected
+          body = [0, 1].map((n) => ({
+            class_id: s0.class_id, section_id: s0.id, day, period,
+            teacher_id: teachers[n].id, subject_id: subjects[0].id, room_id: null, group_id: g, group_kind: "elective",
+          }));
+        }
         const res = await fetch(`${base}/timetable_slots`, { method: "POST", headers: h, body: JSON.stringify(body) });
         const text = await res.text();
         if (res.ok) {
@@ -132,5 +150,16 @@ test.describe("timetable integrity constraints", () => {
   test("an elective block may put two subjects in one section in the same period", async ({ page }) => {
     const r = await insertGroup(page, "elective");
     expect(r.status, r.body).toBeLessThan(300);
+  });
+
+  test("a section-shared elective (2 subjects x 2 sections, one group) is accepted", async ({ page }) => {
+    const r = await insertGroup(page, "shared-elective");
+    expect(r.status, r.body).toBeLessThan(300);
+  });
+
+  test("the same subject cannot appear twice in one grouped cell", async ({ page }) => {
+    const r = await insertGroup(page, "dup-subject");
+    expect(r.status, r.body).toBe(409);
+    expect(r.body).toMatch(/section_id.*day.*period.*subject_id|duplicate key/);
   });
 });
