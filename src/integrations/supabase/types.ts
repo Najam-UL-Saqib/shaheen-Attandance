@@ -12,8 +12,84 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
+      break_classes: {
+        Row: {
+          break_id: string
+          class_id: string
+        }
+        Insert: {
+          break_id: string
+          class_id: string
+        }
+        Update: {
+          break_id?: string
+          class_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "break_classes_break_id_fkey"
+            columns: ["break_id"]
+            isOneToOne: false
+            referencedRelation: "breaks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "break_classes_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      breaks: {
+        Row: {
+          after_period: number
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          after_period: number
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          after_period?: number
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       class_subjects: {
         Row: {
           class_id: string
@@ -68,6 +144,48 @@ export type Database = {
         }
         Relationships: []
       }
+      game_period_assignments: {
+        Row: {
+          class_id: string
+          created_at: string
+          day: number
+          id: string
+          period: number
+          section_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          day: number
+          id?: string
+          period: number
+          section_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          day?: number
+          id?: string
+          period?: number
+          section_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_period_assignments_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_period_assignments_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rooms: {
         Row: {
           capacity: number | null
@@ -89,72 +207,30 @@ export type Database = {
         }
         Relationships: []
       }
-      game_period_assignments: {
-        Row: {
-          id: string
-          class_id: string
-          section_id: string
-          day: number
-          period: number
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          class_id: string
-          section_id: string
-          day: number
-          period: number
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          class_id?: string
-          section_id?: string
-          day?: number
-          period?: number
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "game_period_assignments_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "classes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "game_period_assignments_section_id_fkey"
-            columns: ["section_id"]
-            isOneToOne: false
-            referencedRelation: "sections"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       school_settings: {
         Row: {
+          break_after_period: number
           id: number
+          max_consecutive_periods: number
           periods_per_day: number
           updated_at: string
           working_days: number
-          break_after_period: number
-          max_consecutive_periods: number
         }
         Insert: {
+          break_after_period?: number
           id?: number
+          max_consecutive_periods?: number
           periods_per_day?: number
           updated_at?: string
           working_days?: number
-          break_after_period?: number
-          max_consecutive_periods?: number
         }
         Update: {
+          break_after_period?: number
           id?: number
+          max_consecutive_periods?: number
           periods_per_day?: number
           updated_at?: string
           working_days?: number
-          break_after_period?: number
-          max_consecutive_periods?: number
         }
         Relationships: []
       }
@@ -336,6 +412,70 @@ export type Database = {
         }
         Relationships: []
       }
+      teaching_group_members: {
+        Row: {
+          group_id: string
+          id: string
+          section_id: string
+          subject_id: string
+        }
+        Insert: {
+          group_id: string
+          id?: string
+          section_id: string
+          subject_id: string
+        }
+        Update: {
+          group_id?: string
+          id?: string
+          section_id?: string
+          subject_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teaching_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "teaching_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teaching_group_members_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teaching_group_members_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teaching_groups: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          name?: string
+        }
+        Relationships: []
+      }
       timetable_day_overrides: {
         Row: {
           class_id: string
@@ -343,6 +483,7 @@ export type Database = {
           date: string
           id: string
           is_game: boolean
+          kind: string
           period: number
           room_id: string | null
           section_id: string
@@ -356,6 +497,7 @@ export type Database = {
           date: string
           id?: string
           is_game?: boolean
+          kind?: string
           period: number
           room_id?: string | null
           section_id: string
@@ -369,6 +511,7 @@ export type Database = {
           date?: string
           id?: string
           is_game?: boolean
+          kind?: string
           period?: number
           room_id?: string | null
           section_id?: string
@@ -419,6 +562,7 @@ export type Database = {
           class_id: string
           created_at: string
           day: number
+          group_id: string | null
           id: string
           period: number
           room_id: string | null
@@ -430,6 +574,7 @@ export type Database = {
           class_id: string
           created_at?: string
           day: number
+          group_id?: string | null
           id?: string
           period: number
           room_id?: string | null
@@ -441,6 +586,7 @@ export type Database = {
           class_id?: string
           created_at?: string
           day?: number
+          group_id?: string | null
           id?: string
           period?: number
           room_id?: string | null
@@ -454,6 +600,13 @@ export type Database = {
             columns: ["class_id"]
             isOneToOne: false
             referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timetable_slots_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "teaching_groups"
             referencedColumns: ["id"]
           },
           {
@@ -537,12 +690,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -566,11 +719,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -591,11 +744,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -616,11 +769,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -633,11 +786,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -647,6 +800,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["admin"],

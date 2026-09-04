@@ -12,6 +12,7 @@ import { RotateCcw, Gamepad2, Coffee, AlertTriangle, UserX } from "lucide-react"
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { dateToDay, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
+import { allBreakPositions, breakPositionsForClass, type Break, type BreakClass } from "@/lib/breaks";
 import { naturalCompare } from "@/lib/utils";
 
 export const Route = createFileRoute("/day-view")({ component: DayViewPage });
@@ -89,9 +90,11 @@ function DayViewPage() {
     queryFn: async () => (await supabase.from("timetable_day_overrides").select("*").eq("date", selectedDate)).data as Override[],
   });
   const gameQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("section_id,day,period")).data as GameAssignment[] });
+  const breaksQ = useQuery({ queryKey: ["breaks"], queryFn: async () => (await supabase.from("breaks").select("*")).data as Break[] });
+  const breakClassesQ = useQuery({ queryKey: ["break_classes"], queryFn: async () => (await supabase.from("break_classes").select("*")).data as BreakClass[] });
 
   const periods = settingsQ.data?.periods_per_day ?? DEFAULT_PERIODS_PER_DAY;
-  const breakAfter = settingsQ.data?.break_after_period ?? DEFAULT_BREAK_AFTER_PERIOD;
+  const defaultBreakAfter = settingsQ.data?.break_after_period ?? DEFAULT_BREAK_AFTER_PERIOD;
   const maxConsecutive = settingsQ.data?.max_consecutive_periods ?? MAX_CONSECUTIVE_TEACHING_PERIODS;
   const classes = classesQ.data ?? [];
   const sections = sectionsQ.data ?? [];
@@ -103,6 +106,8 @@ function DayViewPage() {
   const allSlots = allSlotsQ.data ?? [];
   const overrides = overridesQ.data ?? [];
   const allGameAssignments = gameQ.data ?? [];
+  const breaks = breaksQ.data ?? [];
+  const breakClasses = breakClassesQ.data ?? [];
 
   const weekday = useMemo(() => dateToDay(selectedDate), [selectedDate]);
   const teacherName = (id: string | null) => teachers.find((t) => t.id === id)?.name ?? "?";
@@ -133,10 +138,15 @@ function DayViewPage() {
     return s;
   }, [allGameAssignments, weekday]);
 
-  const periodColumns: Array<{ type: "period"; n: number } | { type: "break" }> = [];
+  // Column layout = union of every class's break positions; each row shows the
+  // break marker only where its own class actually breaks.
+  const unionBreakPositions = allBreakPositions(classes.map((c) => c.id), breaks, breakClasses, defaultBreakAfter);
+  const classBreaksAt = (classId: string | undefined, pos: number) =>
+    !!classId && breakPositionsForClass(classId, breaks, breakClasses, defaultBreakAfter).includes(pos);
+  const periodColumns: Array<{ type: "period"; n: number } | { type: "break"; after: number }> = [];
   for (let i = 1; i <= periods; i++) {
     periodColumns.push({ type: "period", n: i });
-    if (breakAfter > 0 && i === breakAfter) periodColumns.push({ type: "break" });
+    if (unionBreakPositions.includes(i)) periodColumns.push({ type: "break", after: i });
   }
 
   type Effective = {
@@ -444,11 +454,14 @@ function DayViewPage() {
                   <td className="p-2 font-medium border-b sticky left-0 bg-card z-10">{klass!.name} – {sec.section_name}</td>
                   {periodColumns.map((col, i) => {
                     if (col.type === "break") {
+                      const here = classBreaksAt(klass!.id, col.after);
                       return (
-                        <td key={`break-${i}`} className="border-b border-l bg-amber-50/60 dark:bg-amber-950/10 w-8">
-                          <div className="h-full flex items-center justify-center">
-                            <span className="text-[9px] text-amber-500 rotate-90 inline-block">Break</span>
-                          </div>
+                        <td key={`break-${i}`} className={`border-b border-l w-8 ${here ? "bg-amber-50/60 dark:bg-amber-950/10" : ""}`}>
+                          {here && (
+                            <div className="h-full flex items-center justify-center">
+                              <span className="text-[9px] text-amber-500 rotate-90 inline-block">Break</span>
+                            </div>
+                          )}
                         </td>
                       );
                     }

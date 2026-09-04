@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Coffee, Palette, RotateCcw } from "lucide-react";
+import { Palette, RotateCcw } from "lucide-react";
+import { BreaksCard } from "@/components/breaks-card";
 import {
   THEME_COLOR_KEYS,
   THEME_COLOR_LABELS,
@@ -132,36 +133,13 @@ function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Coffee className="h-5 w-5 text-muted-foreground" />
-              Break configuration
-            </CardTitle>
-            <CardDescription>
-              Optionally show a break gap in the timetable grid after a specific period. Set to 0 to disable.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="break-after">Break after period (0 = no break)</Label>
-              <Input
-                id="break-after"
-                type="number"
-                min={0}
-                max={periods}
-                value={breakAfter}
-                onChange={(e) => setBreakAfter(Number(e.target.value))}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {breakAfter > 0
-                  ? `A break strip will appear between Period ${breakAfter} and Period ${breakAfter + 1} in the timetable.`
-                  : "No break will be shown."}
-              </p>
-            </div>
-            <Button onClick={save} disabled={!data}>Save</Button>
-          </CardContent>
-        </Card>
+        <BreaksCard
+          periods={periods}
+          defaultAfter={breakAfter}
+          onDefaultChange={setBreakAfter}
+          onSaveDefault={save}
+          canSave={!!data}
+        />
 
         <Card>
           <CardHeader>

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, Trash2, AlertTriangle, Gamepad2, Coffee } from "lucide-react";
 import { DAY_NAMES, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_WORKING_DAYS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
+import { breakPositionsForClass, type Break, type BreakClass } from "@/lib/breaks";
 import { naturalCompare } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -38,10 +39,12 @@ function TimetablePage() {
   const allocSubsQ = useQuery({ queryKey: ["teacher_allocation_subjects"], queryFn: async () => (await supabase.from("teacher_allocation_subjects").select("*")).data as AllocSubject[] });
   const slotsQ = useQuery({ queryKey: ["timetable_slots"], queryFn: async () => (await supabase.from("timetable_slots").select("*")).data as Slot[] });
   const gameQ = useQuery({ queryKey: ["game_period_assignments"], queryFn: async () => (await supabase.from("game_period_assignments").select("*")).data as GameAssignment[] });
+  const breaksQ = useQuery({ queryKey: ["breaks"], queryFn: async () => (await supabase.from("breaks").select("*")).data as Break[] });
+  const breakClassesQ = useQuery({ queryKey: ["break_classes"], queryFn: async () => (await supabase.from("break_classes").select("*")).data as BreakClass[] });
 
   const days = settingsQ.data?.working_days ?? DEFAULT_WORKING_DAYS;
   const periods = settingsQ.data?.periods_per_day ?? DEFAULT_PERIODS_PER_DAY;
-  const breakAfter = settingsQ.data?.break_after_period ?? DEFAULT_BREAK_AFTER_PERIOD;
+  const defaultBreakAfter = settingsQ.data?.break_after_period ?? DEFAULT_BREAK_AFTER_PERIOD;
   const maxConsecutive = settingsQ.data?.max_consecutive_periods ?? MAX_CONSECUTIVE_TEACHING_PERIODS;
 
   const classes = [...(classesQ.data ?? [])].sort((a, b) => naturalCompare(a.name, b.name));
@@ -320,13 +323,14 @@ function TimetablePage() {
     qc.invalidateQueries({ queryKey: ["game_period_assignments"] });
   };
 
-  // Build list of period numbers from 1..periods, inserting a break marker after breakAfter
-  const periodColumns: Array<{ type: "period"; n: number } | { type: "break" }> = [];
+  // Break positions for the class being edited (its custom break, or the school default).
+  const breaks = breaksQ.data ?? [];
+  const breakClasses = breakClassesQ.data ?? [];
+  const breakPositions = classId ? breakPositionsForClass(classId, breaks, breakClasses, defaultBreakAfter) : [];
+  const periodColumns: Array<{ type: "period"; n: number } | { type: "break"; after: number }> = [];
   for (let i = 1; i <= periods; i++) {
     periodColumns.push({ type: "period", n: i });
-    if (breakAfter > 0 && i === breakAfter) {
-      periodColumns.push({ type: "break" });
-    }
+    if (breakPositions.includes(i)) periodColumns.push({ type: "break", after: i });
   }
 
   return (
@@ -364,7 +368,11 @@ function TimetablePage() {
           {/* Legend */}
           <div className="flex gap-4 mb-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><Gamepad2 className="h-3 w-3 text-green-600" /> Game period</span>
-            {breakAfter > 0 && <span className="flex items-center gap-1"><Coffee className="h-3 w-3 text-amber-600" /> Break after period {breakAfter}</span>}
+            {breakPositions.length > 0 && (
+              <span className="flex items-center gap-1">
+                <Coffee className="h-3 w-3 text-amber-600" /> Break after period {breakPositions.join(", ")}
+              </span>
+            )}
           </div>
 
           <Card>
