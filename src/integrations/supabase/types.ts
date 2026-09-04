@@ -412,75 +412,13 @@ export type Database = {
         }
         Relationships: []
       }
-      teaching_group_members: {
-        Row: {
-          group_id: string
-          id: string
-          section_id: string
-          subject_id: string
-        }
-        Insert: {
-          group_id: string
-          id?: string
-          section_id: string
-          subject_id: string
-        }
-        Update: {
-          group_id?: string
-          id?: string
-          section_id?: string
-          subject_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "teaching_group_members_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "teaching_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "teaching_group_members_section_id_fkey"
-            columns: ["section_id"]
-            isOneToOne: false
-            referencedRelation: "sections"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "teaching_group_members_subject_id_fkey"
-            columns: ["subject_id"]
-            isOneToOne: false
-            referencedRelation: "subjects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      teaching_groups: {
-        Row: {
-          created_at: string
-          id: string
-          kind: string
-          name: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          kind: string
-          name: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          kind?: string
-          name?: string
-        }
-        Relationships: []
-      }
       timetable_day_overrides: {
         Row: {
           class_id: string
           created_at: string
           date: string
+          group_id: string | null
+          group_kind: string | null
           id: string
           is_game: boolean
           kind: string
@@ -495,6 +433,8 @@ export type Database = {
           class_id: string
           created_at?: string
           date: string
+          group_id?: string | null
+          group_kind?: string | null
           id?: string
           is_game?: boolean
           kind?: string
@@ -509,6 +449,8 @@ export type Database = {
           class_id?: string
           created_at?: string
           date?: string
+          group_id?: string | null
+          group_kind?: string | null
           id?: string
           is_game?: boolean
           kind?: string
@@ -603,13 +545,6 @@ export type Database = {
             columns: ["class_id"]
             isOneToOne: false
             referencedRelation: "classes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "timetable_slots_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "teaching_groups"
             referencedColumns: ["id"]
           },
           {

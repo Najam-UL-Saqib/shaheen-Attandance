@@ -30,6 +30,11 @@ function populatedCell(page: Page) {
   return page.locator("table tbody tr:first-child td", { hasText: /[A-Za-z]{3,}/ }).first();
 }
 
+// the first editable period cell of the row whose header contains `rowText`
+function firstPeriodCell(page: Page, rowText: string) {
+  return page.locator("table tbody tr", { hasText: rowText }).locator("td.cursor-pointer").first();
+}
+
 test.afterEach(async ({ page }) => {
   await resetDay(page).catch(() => {});
 });
@@ -94,6 +99,46 @@ test("cell editor: Function mode", async ({ page }) => {
   await dialog.getByRole("button", { name: "Set as Function" }).click();
   await expect(page.getByText(/Marked as a function/i)).toBeVisible();
   await expect(populatedCell(page)).toContainText("Function");
+});
+
+test("cell editor: create a combined lesson for the date", async ({ page }) => {
+  // class 8 has no seeded grouped lessons, so the count starts at 0
+  const before = await page.locator("table tbody").getByText("Combined", { exact: true }).count();
+  await firstPeriodCell(page, "8 – A").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Combined", exact: true }).click();
+
+  await dialog.getByRole("checkbox").first().click(); // "Also covers" sibling
+  await dialog.getByRole("combobox").first().click(); // subject
+  await page.getByRole("option").first().click();
+  await dialog.getByRole("combobox").nth(1).click(); // teacher
+  await page.getByRole("option").first().click();
+
+  await dialog.getByRole("button", { name: /Save combined lesson/i }).click();
+  await expect(page.getByText(/Combined lesson across 2 sections/i)).toBeVisible();
+
+  // two more "Combined" cells appeared (8-A and 8-B)
+  await expect(page.locator("table tbody").getByText("Combined", { exact: true })).toHaveCount(before + 2);
+  await expect(page.getByText(/changes? on this date/)).toBeVisible();
+});
+
+test("cell editor: create an elective block for the date", async ({ page }) => {
+  await firstPeriodCell(page, "7 – A").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Elective", exact: true }).click();
+
+  // two option rows, each subject + teacher (combobox order: subj,teacher,room per row)
+  const combos = dialog.getByRole("combobox");
+  await combos.nth(0).click(); await page.getByRole("option").nth(0).click();
+  await combos.nth(1).click(); await page.getByRole("option").nth(0).click();
+  await combos.nth(3).click(); await page.getByRole("option").nth(1).click();
+  await combos.nth(4).click(); await page.getByRole("option").nth(1).click();
+
+  await dialog.getByRole("button", { name: /Save elective block/i }).click();
+  await expect(page.getByText(/Elective block/i)).toBeVisible();
+  await expect(page.locator("table tbody").getByText("Elective", { exact: true }).first()).toBeVisible();
 });
 
 test("'Teacher away': cover picker scope toggle flips back and forth", async ({ page }) => {

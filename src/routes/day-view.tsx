@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RotateCcw, Gamepad2, Coffee, AlertTriangle, UserX, ClipboardCheck, PartyPopper } from "lucide-react";
+import { RotateCcw, Gamepad2, Coffee, AlertTriangle, UserX, ClipboardCheck, PartyPopper, GitMerge, Users, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { dateToDay, wouldExceedConsecutiveTeachingLimit, MAX_CONSECUTIVE_TEACHING_PERIODS, DEFAULT_PERIODS_PER_DAY, DEFAULT_BREAK_AFTER_PERIOD } from "@/lib/schedule";
@@ -24,7 +24,11 @@ type Subject = { id: string; name: string };
 type Room = { id: string; name: string };
 type ClassSubject = { class_id: string; subject_id: string };
 type Allocation = { teacher_id: string; section_id: string };
-type Slot = { class_id: string; section_id: string; day: number; period: number; teacher_id: string; subject_id: string; room_id: string | null };
+type Slot = {
+  class_id: string; section_id: string; day: number; period: number;
+  teacher_id: string; subject_id: string; room_id: string | null;
+  group_id: string | null; group_kind: "combined" | "elective" | null;
+};
 type Override = {
   id: string;
   date: string;
@@ -36,8 +40,11 @@ type Override = {
   room_id: string | null;
   is_game: boolean;
   kind: OverrideKind;
+  group_id: string | null;
+  group_kind: "combined" | "elective" | null;
 };
 type OverrideKind = "regular" | "free" | "game" | "test" | "function";
+type ElectiveOption = { subjectId: string; teacherId: string; roomId: string };
 type GameAssignment = { section_id: string; day: number; period: number };
 
 function todayStr() {
@@ -191,17 +198,27 @@ function DayViewPage() {
       .sort((a, b) => naturalCompare(a.klass!.name, b.klass!.name) || naturalCompare(a.sec.section_name, b.sec.section_name));
   }, [sections, classes]);
 
+  // one cell (section+period) can hold several override rows (an elective block)
   const overrideMap = useMemo(() => {
-    const m = new Map<string, Override>();
-    overrides.forEach((o) => m.set(`${o.section_id}-${o.period}`, o));
+    const m = new Map<string, Override[]>();
+    overrides.forEach((o) => {
+      const k = `${o.section_id}-${o.period}`;
+      m.set(k, [...(m.get(k) ?? []), o]);
+    });
     return m;
   }, [overrides]);
+  const overridesAt = (sectionId: string, period: number) => overrideMap.get(`${sectionId}-${period}`) ?? [];
 
+  // one cell can hold several weekly slots (an elective block in timetable_slots)
   const defaultSlotMap = useMemo(() => {
-    const m = new Map<string, Slot>();
-    allSlots.filter((s) => s.day === weekday).forEach((s) => m.set(`${s.section_id}-${s.period}`, s));
+    const m = new Map<string, Slot[]>();
+    allSlots.filter((s) => s.day === weekday).forEach((s) => {
+      const k = `${s.section_id}-${s.period}`;
+      m.set(k, [...(m.get(k) ?? []), s]);
+    });
     return m;
   }, [allSlots, weekday]);
+  const defaultSlotsAt = (sectionId: string, period: number) => defaultSlotMap.get(`${sectionId}-${period}`) ?? [];
 
   const gameSet = useMemo(() => {
     const s = new Set<string>();
@@ -228,18 +245,41 @@ function DayViewPage() {
     roomId: string | null;
     isGame: boolean;
     kind: OverrideKind;
+    groupId: string | null;
+    groupKind: "combined" | "elective" | null;
   };
 
+  const ovToEffective = (o: Override): Effective => {
+    const kind: OverrideKind = o.kind ?? (o.is_game ? "game" : "regular");
+    return {
+      source: "override", overrideId: o.id, teacherId: o.teacher_id, subjectId: o.subject_id, roomId: o.room_id,
+      isGame: kind === "game", kind, groupId: o.group_id, groupKind: o.group_kind,
+    };
+  };
+
+  const defToEffective = (s: Slot): Effective => ({
+    source: "default", overrideId: `def:${s.section_id}-${s.period}-${s.subject_id}`,
+    teacherId: s.teacher_id, subjectId: s.subject_id, roomId: s.room_id,
+    isGame: false, kind: "regular", groupId: s.group_id, groupKind: s.group_kind,
+  });
+
+  // the primary lesson in a cell (first row); use cellLessons() for the full list
   const getEffective = (sectionId: string, period: number): Effective => {
-    const ov = overrideMap.get(`${sectionId}-${period}`);
-    if (ov) {
-      const kind: OverrideKind = ov.kind ?? (ov.is_game ? "game" : "regular");
-      return { source: "override", overrideId: ov.id, teacherId: ov.teacher_id, subjectId: ov.subject_id, roomId: ov.room_id, isGame: kind === "game", kind };
-    }
-    const def = defaultSlotMap.get(`${sectionId}-${period}`);
-    if (def) return { source: "default", overrideId: null, teacherId: def.teacher_id, subjectId: def.subject_id, roomId: def.room_id, isGame: false, kind: "regular" };
+    const ovs = overridesAt(sectionId, period);
+    if (ovs.length) return ovToEffective(ovs[0]);
+    const defs = defaultSlotsAt(sectionId, period);
+    if (defs.length) return defToEffective(defs[0]);
     const g = gameSet.has(`${sectionId}-${period}`);
-    return { source: "empty", overrideId: null, teacherId: null, subjectId: null, roomId: null, isGame: g, kind: g ? "game" : "regular" };
+    return { source: "empty", overrideId: null, teacherId: null, subjectId: null, roomId: null, isGame: g, kind: g ? "game" : "regular", groupId: null, groupKind: null };
+  };
+
+  // every lesson running in a cell (>1 for an elective block, weekly or per-date)
+  const cellLessons = (sectionId: string, period: number): Effective[] => {
+    const ovs = overridesAt(sectionId, period);
+    if (ovs.length) return ovs.map(ovToEffective);
+    const defs = defaultSlotsAt(sectionId, period);
+    if (defs.length) return defs.map(defToEffective);
+    return gameSet.has(`${sectionId}-${period}`) ? [getEffective(sectionId, period)] : [];
   };
 
   const periodsForTeacherOnDate = (teacherId: string, excludeSectionId?: string, excludePeriod?: number): number[] => {
@@ -247,7 +287,7 @@ function DayViewPage() {
     for (const sec of sections) {
       for (let p = 1; p <= periods; p++) {
         if (sec.id === excludeSectionId && p === excludePeriod) continue;
-        if (getEffective(sec.id, p).teacherId === teacherId) result.push(p);
+        if (cellLessons(sec.id, p).some((l) => l.teacherId === teacherId)) result.push(p);
       }
     }
     return result;
@@ -258,11 +298,12 @@ function DayViewPage() {
     const m = new Map<string, number[]>();
     for (const sec of sections) {
       for (let p = 1; p <= periods; p++) {
-        const eff = getEffective(sec.id, p);
-        if (eff.isGame || !eff.teacherId) continue;
-        const arr = m.get(eff.teacherId) ?? [];
-        if (!arr.includes(p)) arr.push(p);
-        m.set(eff.teacherId, arr);
+        for (const l of cellLessons(sec.id, p)) {
+          if (l.isGame || !l.teacherId) continue;
+          const arr = m.get(l.teacherId) ?? [];
+          if (!arr.includes(p)) arr.push(p);
+          m.set(l.teacherId, arr);
+        }
       }
     }
     m.forEach((v) => v.sort((a, b) => a - b));
@@ -270,13 +311,20 @@ function DayViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overrideMap, defaultSlotMap, gameSet, sections, periods]);
 
-  // teachers busy in a given period (across every section), for the selected date
+  // teachers busy in a given period (across every section), for the selected date.
+  // A grouped lesson's teachers are not "busy" for that same group's other sections.
   const busyInPeriod = (period: number, ignoreSectionId?: string) => {
     const set = new Set<string>();
+    const ignoreGroups = new Set(
+      ignoreSectionId
+        ? cellLessons(ignoreSectionId, period).map((l) => l.groupId).filter(Boolean)
+        : [],
+    );
     for (const sec of sections) {
       if (sec.id === ignoreSectionId) continue;
-      const t = getEffective(sec.id, period).teacherId;
-      if (t) set.add(t);
+      for (const l of cellLessons(sec.id, period)) {
+        if (l.teacherId && !(l.groupId && ignoreGroups.has(l.groupId))) set.add(l.teacherId);
+      }
     }
     return set;
   };
@@ -314,17 +362,71 @@ function DayViewPage() {
   const [editTeacher, setEditTeacher] = useState("");
   const [editSubject, setEditSubject] = useState("");
   const [editRoom, setEditRoom] = useState("");
-  const [editMode, setEditMode] = useState<"regular" | "game" | "test" | "function">("regular");
+  const [editMode, setEditMode] = useState<"regular" | "game" | "test" | "function" | "combined" | "elective">("regular");
   const [teacherScope, setTeacherScope] = useState<TeacherScope>("class");
+  const [combinedSections, setCombinedSections] = useState<Set<string>>(new Set());
+  const [electiveOptions, setElectiveOptions] = useState<ElectiveOption[]>([]);
+  const [electiveSections, setElectiveSections] = useState<Set<string>>(new Set());
+
+  const siblingSections = useMemo(
+    () => (edit ? sections.filter((s) => s.class_id === edit.classId && s.id !== edit.sectionId) : []),
+    [sections, edit],
+  );
 
   const openCell = (sectionId: string, classId: string, period: number) => {
-    const eff = getEffective(sectionId, period);
     setEdit({ sectionId, classId, period });
+    setTeacherScope("class");
+    setCombinedSections(new Set());
+    setElectiveOptions([]);
+    setElectiveSections(new Set());
+
+    const here = overridesAt(sectionId, period);
+    const grouped = here.find((o) => o.group_id);
+    if (grouped?.group_kind === "combined") {
+      setEditMode("combined");
+      setEditTeacher(grouped.teacher_id ?? "");
+      setEditSubject(grouped.subject_id ?? "");
+      setEditRoom(grouped.room_id ?? "");
+      const groupRows = overrides.filter((o) => o.group_id === grouped.group_id);
+      setCombinedSections(new Set(groupRows.map((o) => o.section_id).filter((id) => id !== sectionId)));
+      return;
+    }
+    if (grouped?.group_kind === "elective") {
+      setEditMode("elective");
+      const groupRows = overrides.filter((o) => o.group_id === grouped.group_id);
+      const bySubject = new Map<string, Override>();
+      groupRows.forEach((o) => { if (o.subject_id && !bySubject.has(o.subject_id)) bySubject.set(o.subject_id, o); });
+      setElectiveOptions([...bySubject.values()].map((o) => ({ subjectId: o.subject_id ?? "", teacherId: o.teacher_id ?? "", roomId: o.room_id ?? "" })));
+      setElectiveSections(new Set(groupRows.map((o) => o.section_id).filter((id) => id !== sectionId)));
+      return;
+    }
+
+    // no override yet — pre-fill from the weekly timetable, including its groups
+    const wk = defaultSlotsAt(sectionId, period);
+    const wkGrouped = wk.find((s) => s.group_id);
+    if (wkGrouped?.group_kind === "combined") {
+      setEditMode("combined");
+      setEditTeacher(wkGrouped.teacher_id);
+      setEditSubject(wkGrouped.subject_id);
+      setEditRoom(wkGrouped.room_id ?? "");
+      setCombinedSections(new Set(allSlots.filter((s) => s.group_id === wkGrouped.group_id).map((s) => s.section_id).filter((id) => id !== sectionId)));
+      return;
+    }
+    if (wkGrouped?.group_kind === "elective") {
+      setEditMode("elective");
+      const rows = allSlots.filter((s) => s.group_id === wkGrouped.group_id);
+      const bySub = new Map<string, Slot>();
+      rows.forEach((s) => { if (!bySub.has(s.subject_id)) bySub.set(s.subject_id, s); });
+      setElectiveOptions([...bySub.values()].map((s) => ({ subjectId: s.subject_id, teacherId: s.teacher_id, roomId: s.room_id ?? "" })));
+      setElectiveSections(new Set(rows.map((s) => s.section_id).filter((id) => id !== sectionId)));
+      return;
+    }
+
+    const eff = getEffective(sectionId, period);
     setEditTeacher(eff.teacherId ?? "");
     setEditSubject(eff.subjectId ?? "");
     setEditRoom(eff.roomId ?? "");
     setEditMode(eff.kind === "game" ? "game" : eff.kind === "test" ? "test" : eff.kind === "function" ? "function" : "regular");
-    setTeacherScope("class");
   };
 
   const subjectsForClass = useMemo(() => {
@@ -333,8 +435,9 @@ function DayViewPage() {
     return subjects.filter((s) => ids.has(s.id));
   }, [cs, subjects, edit]);
 
-  const currentOverride = edit ? overrideMap.get(`${edit.sectionId}-${edit.period}`) : undefined;
-  const editIsBaseGame = edit ? gameSet.has(`${edit.sectionId}-${edit.period}`) && !currentOverride : false;
+  const currentOverrides = edit ? overridesAt(edit.sectionId, edit.period) : [];
+  const currentOverride = currentOverrides[0];
+  const editIsBaseGame = edit ? gameSet.has(`${edit.sectionId}-${edit.period}`) && currentOverrides.length === 0 : false;
 
   // teachers to offer for the edited cell: allocated-to-this-section first, then (on request) everyone;
   // busy teachers are excluded unless it's the one already assigned here.
@@ -360,12 +463,42 @@ function DayViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, editTeacher, maxConsecutive, overrideMap, defaultSlotMap]);
 
-  const upsertOverride = (
-    payload: Partial<Override> & { section_id: string; class_id: string; period: number; kind: OverrideKind },
-  ) =>
-    supabase
-      .from("timetable_day_overrides")
-      .upsert({ date: selectedDate, is_game: payload.kind === "game", ...payload }, { onConflict: "section_id,date,period" });
+  // A partial unique index can't be an upsert arbiter, so every write clears the
+  // target cells first, then inserts. `cells` is the set of (section, period)
+  // pairs being written — their existing overrides (grouped or not) are removed.
+  type OverrideInsert = {
+    class_id: string; section_id: string; period: number;
+    teacher_id: string | null; subject_id: string | null; room_id: string | null;
+    is_game: boolean; kind: string;
+    group_id?: string | null; group_kind?: string | null;
+  };
+  const replaceOverrides = async (
+    cells: { section_id: string; period: number }[],
+    rows: OverrideInsert[],
+  ) => {
+    const uniq = [...new Map(cells.map((c) => [`${c.section_id}-${c.period}`, c])).values()];
+    for (const c of uniq) {
+      const { error } = await supabase
+        .from("timetable_day_overrides")
+        .delete().eq("date", selectedDate).eq("section_id", c.section_id).eq("period", c.period);
+      if (error) return { error };
+    }
+    if (rows.length === 0) return { error: null };
+    return supabase.from("timetable_day_overrides").insert(rows.map((r) => ({ date: selectedDate, ...r })));
+  };
+
+  const upsertOverride = (p: {
+    section_id: string; class_id: string; period: number; kind: OverrideKind;
+    teacher_id?: string | null; subject_id?: string | null; room_id?: string | null;
+  }) =>
+    replaceOverrides(
+      [{ section_id: p.section_id, period: p.period }],
+      [{
+        class_id: p.class_id, section_id: p.section_id, period: p.period, kind: p.kind,
+        teacher_id: p.teacher_id ?? null, subject_id: p.subject_id ?? null, room_id: p.room_id ?? null,
+        is_game: p.kind === "game",
+      }],
+    );
 
   const saveGamePeriod = async () => {
     if (!edit) return;
@@ -406,10 +539,76 @@ function DayViewPage() {
     qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
   };
 
+  const saveCombined = async () => {
+    if (!edit) return;
+    if (!editTeacher || !editSubject) return toast.error("Pick a teacher and a subject for the combined lesson");
+    if (combinedSections.size === 0) return toast.error("Tick at least one other section to combine with");
+    const secIds = [edit.sectionId, ...combinedSections];
+
+    // teacher must be free everywhere except the sections in this group
+    for (const sec of sections) {
+      if (secIds.includes(sec.id)) continue;
+      if (cellLessons(sec.id, edit.period).some((l) => l.teacherId === editTeacher)) {
+        return toast.error(`${teacherName(editTeacher)} is already teaching ${classes.find((c) => c.id === sec.class_id)?.name}/${sec.section_name} in period ${edit.period}.`);
+      }
+    }
+    if (editWouldBreakConsecutive && !window.confirm(`${teacherName(editTeacher)} would teach more than ${maxConsecutive} periods in a row today.\n\nAssign anyway?`)) return;
+
+    const gid = crypto.randomUUID();
+    const rows = secIds.map((sid) => ({
+      class_id: sections.find((s) => s.id === sid)!.class_id, section_id: sid, period: edit.period,
+      teacher_id: editTeacher, subject_id: editSubject, room_id: editRoom || null,
+      is_game: false, kind: "regular", group_id: gid, group_kind: "combined",
+    }));
+    const { error } = await replaceOverrides(secIds.map((sid) => ({ section_id: sid, period: edit.period })), rows);
+    if (error) return toast.error(error.message);
+    toast.success(`Combined lesson across ${secIds.length} sections for this date`);
+    setEdit(null);
+    qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
+  };
+
+  const saveElective = async () => {
+    if (!edit) return;
+    const opts = electiveOptions.filter((o) => o.subjectId && o.teacherId);
+    if (opts.length < 2) return toast.error("An elective block needs at least 2 filled options");
+    if (new Set(opts.map((o) => o.subjectId)).size !== opts.length) return toast.error("Each option must be a different subject");
+    if (new Set(opts.map((o) => o.teacherId)).size !== opts.length) return toast.error("Each option needs a different teacher");
+    const secIds = [edit.sectionId, ...electiveSections];
+
+    for (const o of opts) {
+      for (const sec of sections) {
+        if (secIds.includes(sec.id)) continue;
+        if (cellLessons(sec.id, edit.period).some((l) => l.teacherId === o.teacherId)) {
+          return toast.error(`${teacherName(o.teacherId)} is already teaching elsewhere in period ${edit.period}.`);
+        }
+      }
+    }
+
+    const gid = crypto.randomUUID();
+    const rows = secIds.flatMap((sid) =>
+      opts.map((o) => ({
+        class_id: sections.find((s) => s.id === sid)!.class_id, section_id: sid, period: edit.period,
+        teacher_id: o.teacherId, subject_id: o.subjectId, room_id: o.roomId || null,
+        is_game: false, kind: "regular", group_id: gid, group_kind: "elective",
+      })),
+    );
+    const { error } = await replaceOverrides(secIds.map((sid) => ({ section_id: sid, period: edit.period })), rows);
+    if (error) return toast.error(error.message);
+    toast.success(
+      secIds.length > 1
+        ? `Elective block (${opts.length} options) across ${secIds.length} sections for this date`
+        : `Elective block with ${opts.length} options for this date`,
+    );
+    setEdit(null);
+    qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
+  };
+
   const saveCell = async () => {
     if (!edit) return;
     if (editMode === "game") return saveGamePeriod();
     if (editMode === "test" || editMode === "function") return saveTestOrFunction(editMode);
+    if (editMode === "combined") return saveCombined();
+    if (editMode === "elective") return saveElective();
     if (!editTeacher || !editSubject) return toast.error("Pick a teacher and a subject");
 
     // Hard block: a teacher cannot be in two class/sections in the same period.
@@ -446,6 +645,12 @@ function DayViewPage() {
 
   const markFree = async () => {
     if (!edit) return;
+    // clear the whole group first if this cell is part of one
+    const grp = currentOverrides.find((o) => o.group_id)?.group_id;
+    if (grp) {
+      const { error: delErr } = await supabase.from("timetable_day_overrides").delete().eq("date", selectedDate).eq("group_id", grp);
+      if (delErr) return toast.error(delErr.message);
+    }
     const { error } = await upsertOverride({ class_id: edit.classId, section_id: edit.sectionId, period: edit.period, teacher_id: null, subject_id: null, room_id: null, kind: "free" });
     if (error) return toast.error(error.message);
     toast.success("Marked free for this date");
@@ -454,10 +659,15 @@ function DayViewPage() {
   };
 
   const resetCell = async () => {
-    if (!edit || !currentOverride) { setEdit(null); return; }
-    const { error } = await supabase.from("timetable_day_overrides").delete().eq("id", currentOverride.id);
+    if (!edit || currentOverrides.length === 0) { setEdit(null); return; }
+    // a grouped override is cleared for every member section
+    const grp = currentOverrides.find((o) => o.group_id)?.group_id;
+    const q = supabase.from("timetable_day_overrides").delete().eq("date", selectedDate);
+    const { error } = grp
+      ? await q.eq("group_id", grp)
+      : await q.in("id", currentOverrides.map((o) => o.id));
     if (error) return toast.error(error.message);
-    toast.success("Reset to default");
+    toast.success("Reset to the weekly timetable for this date");
     setEdit(null);
     qc.invalidateQueries({ queryKey: ["timetable_day_overrides", selectedDate] });
   };
@@ -504,13 +714,13 @@ function DayViewPage() {
     const rows = awayLessons
       .filter((l) => away.subs[l.key])
       .map((l) => ({
-        date: selectedDate, class_id: l.classId, section_id: l.sectionId, period: l.period,
+        class_id: l.classId, section_id: l.sectionId, period: l.period,
         teacher_id: away.subs[l.key] === "__free__" ? null : away.subs[l.key],
         subject_id: away.subs[l.key] === "__free__" ? null : l.subjectId,
         room_id: null, is_game: false, kind: away.subs[l.key] === "__free__" ? "free" : "regular",
       }));
     if (rows.length === 0) return toast.error("Choose a cover teacher for at least one period.");
-    const { error } = await supabase.from("timetable_day_overrides").upsert(rows, { onConflict: "section_id,date,period" });
+    const { error } = await replaceOverrides(rows.map((r) => ({ section_id: r.section_id, period: r.period })), rows);
     if (error) return toast.error(error.message);
     toast.success(`${rows.length} period${rows.length === 1 ? "" : "s"} reassigned`);
     setAway((a) => ({ ...a, open: false, subs: {} }));
@@ -576,12 +786,12 @@ function DayViewPage() {
         }
       }
       return {
-        date: selectedDate, class_id: t.classId, section_id: t.sectionId, period: t.period,
+        class_id: t.classId, section_id: t.sectionId, period: t.period,
         teacher_id: teacherId, subject_id: isTest ? bulk.subjectId || null : null,
         room_id: null, is_game: false, kind: bulk.kind,
       };
     });
-    const { error } = await supabase.from("timetable_day_overrides").upsert(rows, { onConflict: "section_id,date,period" });
+    const { error } = await replaceOverrides(rows.map((r) => ({ section_id: r.section_id, period: r.period })), rows);
     if (error) return toast.error(error.message);
     const assigned = rows.filter((r) => r.teacher_id).length;
     toast.success(
@@ -658,6 +868,7 @@ function DayViewPage() {
                     }
                     const period = col.n;
                     const eff = getEffective(sec.id, period);
+                    const lessons = cellLessons(sec.id, period);
                     const isGame = eff.isGame;
                     const overCons = eff.teacherId && (eff.kind === "regular" || eff.kind === "test")
                       ? isConsecutiveViolation(eff.teacherId, period) : false;
@@ -667,6 +878,10 @@ function DayViewPage() {
                         className={`p-2 border-b border-l align-top cursor-pointer hover:bg-accent/40 min-w-32 ${
                           isGame
                             ? "bg-green-50 dark:bg-green-950/20 border-l-2 border-l-green-500"
+                            : eff.groupKind === "combined"
+                              ? "bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-blue-500"
+                            : eff.groupKind === "elective"
+                              ? "bg-purple-50 dark:bg-purple-950/20 border-l-2 border-l-purple-500"
                             : eff.kind === "test"
                               ? "bg-indigo-50 dark:bg-indigo-950/20 border-l-2 border-l-indigo-500"
                             : eff.kind === "function"
@@ -682,6 +897,18 @@ function DayViewPage() {
                         {isGame ? (
                           <div className="flex items-center gap-1 text-green-700 dark:text-green-400">
                             <Gamepad2 className="h-3 w-3" /><span className="text-xs font-medium">Game</span>
+                          </div>
+                        ) : eff.groupKind ? (
+                          <div className="space-y-1">
+                            <div className={`text-[9px] font-semibold uppercase tracking-wide ${eff.groupKind === "combined" ? "text-blue-600" : "text-purple-600"}`}>
+                              {eff.groupKind === "combined" ? "Combined" : "Elective"}
+                            </div>
+                            {lessons.map((l) => (
+                              <div key={l.overrideId} className="space-y-0.5">
+                                <div className="font-medium text-xs">{subjectName(l.subjectId)}</div>
+                                <div className="text-xs text-muted-foreground">{teacherName(l.teacherId)}</div>
+                              </div>
+                            ))}
                           </div>
                         ) : eff.kind === "test" ? (
                           <div className="space-y-0.5 text-indigo-700 dark:text-indigo-300">
@@ -744,7 +971,21 @@ function DayViewPage() {
             </p>
 
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant={editMode === "regular" ? "default" : "outline"} onClick={() => setEditMode("regular")}>Regular class</Button>
+              <Button type="button" size="sm" variant={editMode === "regular" ? "default" : "outline"} onClick={() => setEditMode("regular")}>Regular</Button>
+              <Button type="button" size="sm" variant={editMode === "combined" ? "default" : "outline"}
+                className={editMode === "combined" ? "bg-blue-600 hover:bg-blue-700" : ""}
+                onClick={() => { setEditMode("combined"); setElectiveOptions([]); setElectiveSections(new Set()); }}>
+                <GitMerge className="h-4 w-4 mr-1" /> Combined
+              </Button>
+              <Button type="button" size="sm" variant={editMode === "elective" ? "default" : "outline"}
+                className={editMode === "elective" ? "bg-purple-600 hover:bg-purple-700" : ""}
+                onClick={() => {
+                  setEditMode("elective");
+                  setCombinedSections(new Set());
+                  if (electiveOptions.length === 0) setElectiveOptions([{ subjectId: "", teacherId: "", roomId: "" }, { subjectId: "", teacherId: "", roomId: "" }]);
+                }}>
+                <Users className="h-4 w-4 mr-1" /> Elective
+              </Button>
               <Button type="button" size="sm" variant={editMode === "game" ? "default" : "outline"} className={editMode === "game" ? "bg-green-600 hover:bg-green-700" : ""} onClick={() => setEditMode("game")}>
                 <Gamepad2 className="h-4 w-4 mr-1" /> Game
               </Button>
@@ -756,7 +997,92 @@ function DayViewPage() {
               </Button>
             </div>
 
-            {editMode === "game" ? (
+            {editMode === "combined" ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">One teacher takes this and other sections of the class together, for {selectedDate} only.</p>
+                <div>
+                  <Label>Also covers</Label>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {siblingSections.length === 0 && <span className="text-sm text-muted-foreground">This class has no other section.</span>}
+                    {siblingSections.map((s) => (
+                      <label key={s.id} className="flex items-center gap-1.5 text-sm rounded border px-2 py-1 cursor-pointer hover:bg-accent/50">
+                        <input type="checkbox" checked={combinedSections.has(s.id)}
+                          onChange={(e) => setCombinedSections((set) => { const n = new Set(set); e.target.checked ? n.add(s.id) : n.delete(s.id); return n; })} />
+                        Section {s.section_name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Subject</Label>
+                  <Select value={editSubject} onValueChange={setEditSubject}>
+                    <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                    <SelectContent>{subjectsForClass.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Teacher</Label>
+                  <TeacherPicker
+                    primary={teacherOptions.primary} others={teacherOptions.others}
+                    value={editTeacher} onChange={setEditTeacher}
+                    scope={teacherScope} onScopeChange={setTeacherScope}
+                    placeholder="Select a free teacher"
+                  />
+                  {editWouldBreakConsecutive && (
+                    <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Over {maxConsecutive} periods in a row — allowed, you'll confirm.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : editMode === "elective" ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  The section splits into parallel subjects for {selectedDate} only, each with its own teacher.
+                </p>
+                {electiveOptions.map((opt, i) => (
+                  <div key={i} className="rounded-md border p-2 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">Option {String.fromCharCode(65 + i)}</span>
+                      {electiveOptions.length > 2 && (
+                        <button type="button" className="text-xs text-destructive" onClick={() => setElectiveOptions((o) => o.filter((_, j) => j !== i))}>Remove</button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Select value={opt.subjectId} onValueChange={(v) => setElectiveOptions((o) => o.map((x, j) => j === i ? { ...x, subjectId: v } : x))}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Subject" /></SelectTrigger>
+                        <SelectContent>{subjectsForClass.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Select value={opt.teacherId} onValueChange={(v) => setElectiveOptions((o) => o.map((x, j) => j === i ? { ...x, teacherId: v } : x))}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Teacher" /></SelectTrigger>
+                        <SelectContent>{teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Select value={opt.roomId} onValueChange={(v) => setElectiveOptions((o) => o.map((x, j) => j === i ? { ...x, roomId: v } : x))}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Room" /></SelectTrigger>
+                        <SelectContent>{rooms.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" onClick={() => setElectiveOptions((o) => [...o, { subjectId: "", teacherId: "", roomId: "" }])}>
+                  <Plus className="h-4 w-4 mr-1" />Add option
+                </Button>
+                {siblingSections.length > 0 && (
+                  <div className="pt-1">
+                    <Label>Also covers</Label>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {siblingSections.map((s) => (
+                        <label key={s.id} className="flex items-center gap-1.5 text-sm rounded border px-2 py-1 cursor-pointer hover:bg-accent/50">
+                          <input type="checkbox" checked={electiveSections.has(s.id)}
+                            onChange={(e) => setElectiveSections((set) => { const n = new Set(set); e.target.checked ? n.add(s.id) : n.delete(s.id); return n; })} />
+                          Section {s.section_name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : editMode === "game" ? (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 <Gamepad2 className="h-10 w-10 text-green-500" />
                 <p className="text-sm text-muted-foreground">Marked as a <strong>Game / PT period</strong> for {selectedDate}. No teacher needed.</p>
@@ -854,19 +1180,23 @@ function DayViewPage() {
           </div>
           <DialogFooter className="gap-2 flex-wrap">
             <Button variant="ghost" onClick={markFree}>Mark as free</Button>
-            <Button variant="ghost" disabled={!currentOverride} onClick={resetCell}>Reset to default</Button>
+            <Button variant="ghost" disabled={currentOverrides.length === 0} onClick={resetCell}>Reset to default</Button>
             <Button
               onClick={saveCell}
               className={
                 editMode === "game" ? "bg-green-600 hover:bg-green-700"
                 : editMode === "test" ? "bg-indigo-600 hover:bg-indigo-700"
                 : editMode === "function" ? "bg-rose-600 hover:bg-rose-700"
+                : editMode === "combined" ? "bg-blue-600 hover:bg-blue-700"
+                : editMode === "elective" ? "bg-purple-600 hover:bg-purple-700"
                 : ""
               }
             >
               {editMode === "game" ? "Set as Game"
                 : editMode === "test" ? "Set as Test"
                 : editMode === "function" ? "Set as Function"
+                : editMode === "combined" ? "Save combined lesson"
+                : editMode === "elective" ? "Save elective block"
                 : "Save"}
             </Button>
           </DialogFooter>
