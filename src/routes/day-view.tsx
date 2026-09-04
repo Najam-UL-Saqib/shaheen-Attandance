@@ -250,15 +250,21 @@ function DayViewPage() {
       return toast.error(`Cannot save: a teacher must take a break after ${maxConsecutive} consecutive periods.`);
     }
 
-    const conflicts: string[] = [];
+    // Hard block: a teacher cannot be in two class/sections in the same period on this date.
+    const roomConflicts: string[] = [];
     for (const sec of sections) {
       if (sec.id === edit.sectionId) continue;
       const eff = getEffective(sec.id, edit.period);
       const cls = classes.find((c) => c.id === sec.class_id);
-      if (eff.teacherId === editTeacher) conflicts.push(`Teacher already teaching ${cls?.name}/${sec.section_name} at this period on this date`);
-      if (editRoom && eff.roomId === editRoom) conflicts.push(`Room already used by ${cls?.name}/${sec.section_name} at this period on this date`);
+      if (eff.teacherId === editTeacher) {
+        const tn = teachers.find((t) => t.id === editTeacher)?.name ?? "This teacher";
+        return toast.error(`${tn} is already teaching ${cls?.name}/${sec.section_name} in period ${edit.period} on ${selectedDate}.`);
+      }
+      if (editRoom && eff.roomId === editRoom) {
+        roomConflicts.push(`Room already used by ${cls?.name}/${sec.section_name} in this period on this date`);
+      }
     }
-    if (conflicts.length && !confirm("Conflicts detected:\n• " + conflicts.join("\n• ") + "\n\nSave anyway?")) return;
+    if (roomConflicts.length && !confirm(roomConflicts.join("\n") + "\n\nSave anyway?")) return;
 
     const payload = {
       date: selectedDate,

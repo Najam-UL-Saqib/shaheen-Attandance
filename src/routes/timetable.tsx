@@ -155,8 +155,20 @@ function TimetablePage() {
       return toast.error(`Cannot save: a teacher must take a break after ${maxConsecutive} consecutive periods.`);
     }
 
-    const conflicts = checkConflicts(edit.day, edit.period, editTeacher, editRoom, existing?.id);
-    if (conflicts.length && !confirm("Conflicts detected:\n• " + conflicts.join("\n• ") + "\n\nSave anyway?")) return;
+    // Hard block: a teacher cannot be in two class/sections in the same period.
+    const clash = allSlots.find(
+      (s) => s.day === edit.day && s.period === edit.period && s.teacher_id === editTeacher && s.id !== existing?.id && s.section_id !== sectionId,
+    );
+    if (clash) {
+      const cls = classes.find((x) => x.id === clash.class_id)?.name ?? "?";
+      const sec = sections.find((x) => x.id === clash.section_id)?.section_name ?? "?";
+      const tn = teachers.find((x) => x.id === editTeacher)?.name ?? "This teacher";
+      return toast.error(`${tn} is already teaching ${cls}/${sec} on ${DAY_NAMES[edit.day]} period ${edit.period}.`);
+    }
+
+    // Room clash is a softer warning (rooms are optional / can be shared for events).
+    const roomConflicts = editRoom ? checkConflicts(edit.day, edit.period, "", editRoom, existing?.id) : [];
+    if (roomConflicts.length && !confirm(roomConflicts.join("\n") + "\n\nSave anyway?")) return;
 
     // If this cell was previously a game period, remove it
     await removeGameAtCell(edit.day, edit.period);
@@ -173,7 +185,15 @@ function TimetablePage() {
     const { error } = existing
       ? await supabase.from("timetable_slots").update(payload).eq("id", existing.id)
       : await supabase.from("timetable_slots").insert(payload);
-    if (error) return toast.error(error.message);
+    if (error) {
+      if (/teacher_day_period/.test(error.message)) {
+        return toast.error("That teacher is already teaching another class/section in this period.");
+      }
+      if (/section_id.*day.*period/.test(error.message)) {
+        return toast.error("This class/section already has a lesson in this period.");
+      }
+      return toast.error(error.message);
+    }
     toast.success("Saved");
     setEdit(null);
     qc.invalidateQueries({ queryKey: ["timetable_slots"] });
